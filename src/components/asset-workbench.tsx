@@ -149,6 +149,7 @@ export function AssetWorkbench() {
   const [detailAsset, setDetailAsset] = useState<UnifiedAsset | null>(null)
   const [editPrompt, setEditPrompt] = useState('')
   const [isEditing, setIsEditing] = useState(false)
+  const [activeView, setActiveView] = useState<string>('')
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<UnifiedAsset | null>(null)
@@ -433,6 +434,25 @@ export function AssetWorkbench() {
       toast({ title: '生成失败', description: err.message, variant: 'destructive' })
     }
   }
+  const handleRegenerateView = async () => {
+    if (!detailAsset || !activeView || !selectedDramaId) return
+    try {
+      const result = await api.ai.generateCharacterImage(detailAsset.id, selectedStyle || undefined, activeView)
+      toast({ title: `「${activeView}」已重新生成` })
+      await loadDrama()
+      // Update the detail asset's views from fresh drama data
+      const freshChar = drama?.characters?.find((c: any) => c.id === detailAsset.id)
+      if (freshChar) {
+        const appearances = (freshChar as any).appearances || []
+        const updatedViews = appearances
+          .filter((a: any) => a.imageUrl)
+          .map((a: any) => ({ label: a.label, imageUrl: a.imageUrl }))
+        setDetailAsset(prev => prev ? { ...prev, views: updatedViews } : null)
+      }
+    } catch (err: any) {
+      toast({ title: '生成失败', description: err.message, variant: 'destructive' })
+    }
+  }
 
   const handleDeleteAsset = async (asset: UnifiedAsset) => {
     setDeleteTarget(asset)
@@ -496,6 +516,12 @@ export function AssetWorkbench() {
     setDetailAsset(asset)
     setEditPrompt(asset.imagePrompt || '')
     setIsEditing(false)
+    // Set initial view tab for characters
+    if (asset.type === 'character' && asset.views && asset.views.length > 0) {
+      setActiveView(asset.views[0].label)
+    } else {
+      setActiveView('')
+    }
   }
 
   const handleSavePrompt = async () => {
@@ -1073,23 +1099,48 @@ export function AssetWorkbench() {
                 </DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
-                {/* Image */}
-                {detailAsset.imageUrl ? (
-                  <div className="rounded-lg overflow-hidden border border-border/50 bg-muted/30">
-                    <img
-                      src={detailAsset.imageUrl}
-                      alt={detailAsset.name}
-                      className="w-full max-h-64 object-contain"
-                    />
-                  </div>
-                ) : (
-                  <div className="rounded-lg border border-dashed border-border/50 bg-muted/20 h-40 flex items-center justify-center">
-                    <div className="text-center">
-                      <ImageIcon className="size-8 mx-auto text-muted-foreground/30" />
-                      <p className="text-xs text-muted-foreground mt-1">暂无图片</p>
-                    </div>
+                {/* View Tabs (only for characters with multiple views) */}
+                {detailAsset.type === 'character' && detailAsset.views && detailAsset.views.length > 0 && (
+                  <div className="flex gap-1 border-b pb-2 mb-4 overflow-x-auto">
+                    {detailAsset.views.map((v) => (
+                      <button
+                        key={v.label}
+                        className={`px-3 py-1.5 text-xs rounded-t-md whitespace-nowrap transition-colors ${
+                          activeView === v.label
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted hover:bg-muted/80'
+                        }`}
+                        onClick={() => setActiveView(v.label)}
+                      >
+                        {v.label}
+                      </button>
+                    ))}
                   </div>
                 )}
+                {/* Image */}
+                {(() => {
+                  const currentView = detailAsset.type === 'character' && activeView && detailAsset.views
+                    ? detailAsset.views.find(v => v.label === activeView)
+                    : null
+                  const displayUrl = currentView?.imageUrl || detailAsset.imageUrl
+
+                  return displayUrl ? (
+                    <div className="rounded-lg overflow-hidden border border-border/50 bg-muted/30">
+                      <img
+                        src={displayUrl}
+                        alt={detailAsset.name}
+                        className="w-full max-h-64 object-contain"
+                      />
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-border/50 bg-muted/20 h-40 flex items-center justify-center">
+                      <div className="text-center">
+                        <ImageIcon className="size-8 mx-auto text-muted-foreground/30" />
+                        <p className="text-xs text-muted-foreground mt-1">暂无图片</p>
+                      </div>
+                    </div>
+                  )
+                })()}
 
                 {/* Description */}
                 <div>
@@ -1149,6 +1200,17 @@ export function AssetWorkbench() {
                 </div>
               </div>
               <DialogFooter className="gap-2">
+                {detailAsset.type === 'character' && activeView && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs gap-1"
+                    onClick={handleRegenerateView}
+                  >
+                    <RefreshCw className="size-3" />
+                    重新生成「{activeView}」
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
