@@ -13,6 +13,13 @@ const VIEW_INDEX: Record<ViewLabel, number> = {
   '全身侧面': 3,
 }
 
+// Backward compatibility: map old labels to new VIEW_DEFS labels
+const OLD_LABEL_MAP: Record<string, ViewLabel> = {
+  '主形象': '面部特写',
+  '角色设定图': '全身正面',
+  '角色肖像': '全身背面',
+}
+
 function buildViewPrompt(
   character: { name: string; appearance?: string | null; personality?: string | null; role?: string | null },
   viewLabel: ViewLabel,
@@ -105,8 +112,11 @@ export async function POST(request: NextRequest) {
       'blurry, low quality, distorted face, extra limbs, deformed, watermark, text, signature, cartoon, anime'
 
     if (viewLabel) {
-      // === Single view mode ===
-      if (!(viewLabel in VIEW_DEFS)) {
+      // === Single view mode (with backward compat label mapping) ===
+
+      // Map old labels for backward compatibility
+      const mappedLabel = OLD_LABEL_MAP[viewLabel] || viewLabel
+      if (!(mappedLabel in VIEW_DEFS)) {
         return NextResponse.json(
           { error: `Invalid viewLabel: ${viewLabel}` },
           { status: 400 }
@@ -117,9 +127,9 @@ export async function POST(request: NextRequest) {
       let imagePrompt: string
 
       try {
-        imagePrompt = buildViewPrompt(character, viewLabel, style)
+        imagePrompt = buildViewPrompt(character, mappedLabel, style)
         base64Image = await aiClient.generateImage(imagePrompt, negativePrompt, {
-          width: viewLabel === '面部特写' ? 1024 : 768,
+          width: mappedLabel === '面部特写' ? 1024 : 768,
           height: 1024,
           referenceImages,
         })
@@ -141,7 +151,7 @@ export async function POST(request: NextRequest) {
         mimeType: 'image/png',
         category: 'characters',
         dramaId: character.dramaId,
-        filename: `char_${characterId}_${viewLabel}_${Date.now()}`,
+        filename: `char_${characterId}_${mappedLabel}_${Date.now()}`,
       })
       const imageUrl = saveResult.url
 
@@ -158,14 +168,14 @@ export async function POST(request: NextRequest) {
       }
 
       // For 面部特写, also update Character.imageUrl (backward compat)
-      if (viewLabel === '面部特写') {
+      if (mappedLabel === '面部特写') {
         await db.character.update({
           where: { id: characterId },
           data: { imageUrl, imagePrompt },
         })
       }
 
-      const appearance = await upsertAppearance(characterId, viewLabel, {
+      const appearance = await upsertAppearance(characterId, mappedLabel, {
         imageUrl,
         imagePrompt,
         description: visionDescription || appearanceDesc,
@@ -173,14 +183,14 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         imageUrl,
-        viewLabel,
+        viewLabel: mappedLabel,
         appearance: {
           ...appearance,
           imageUrls: JSON.parse(appearance.imageUrls),
         },
         visionDescription,
       })
-    }
+    } // end if (viewLabel)
 
     // === Batch mode: generate all 4 views ===
     const results: Array<{ label: ViewLabel; imageUrl: string }> = []
