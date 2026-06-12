@@ -3,7 +3,7 @@
   "version": "0.9.1",
   "private": true,
   "scripts": {
-    "dev": "node scripts/pre-dev.js && next dev -p 3000 2>&1 | tee dev.log",
+    "dev": "node scripts/pre-dev.js && next dev -p 3000",
     "build": "node scripts/build.js && next build",
     "postinstall": "node scripts/postinstall.js",
     "start": "NODE_ENV=production bun .next/standalone/server.js 2>&1 | tee server.log",

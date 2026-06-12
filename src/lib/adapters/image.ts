@@ -262,19 +262,35 @@ export class MiniMaxImageAdapter implements ImageProviderAdapter {
   ): ProviderRequest {
     const url = joinProviderUrl(config.baseUrl, '/v1', '/image_generation')
 
-    const model = config.model || 'MiniMax-Image-01'
+    const model = config.model || 'image-01'
+    const sizeStr = params.size || '1024x1024'
+    const { width, height } = parseSize(sizeStr)
 
-    const { width, height } = parseSize(params.size)
+    // MiniMax uses specific aspect_ratio enum values (1:1, 16:9, etc.) or width/height
+    const aspectRatioMap: Record<string, string> = {
+      '1024x1024': '1:1',
+      '1920x1080': '16:9',
+      '1280x720': '16:9',
+      '1152x864': '4:3',
+      '1248x832': '3:2',
+      '832x1248': '2:3',
+      '864x1152': '3:4',
+      '720x1280': '9:16',
+      '1344x576': '21:9',
+    }
+    const aspectRatio = aspectRatioMap[sizeStr] || `${width}/${height}`
 
     const body: Record<string, unknown> = {
       model,
       prompt: params.prompt,
-      size: params.size || '1920x1080',
+      aspect_ratio: aspectRatio,
       n: 1,
-      aspect_ratio: `${width}/${height}`,
     }
 
-    // MiniMax supports reference images via the `image` field
+    if (params.negativePrompt) {
+      body.prompt_optimizer = true
+    }
+
     if (params.referenceImages?.length) {
       body.image = params.referenceImages
     }
@@ -309,6 +325,11 @@ export class MiniMaxImageAdapter implements ImageProviderAdapter {
         return { isAsync: false, imageBase64: b64 }
       }
       return { isAsync: false, imageUrl: url }
+    }
+
+    // MiniMax sync response — data.image_urls array
+    if (result?.data?.image_urls?.length) {
+      return { isAsync: false, imageUrl: result.data.image_urls[0] }
     }
 
     // Also check top-level image_url

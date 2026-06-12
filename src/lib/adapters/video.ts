@@ -14,37 +14,28 @@ export class MiniMaxVideoAdapter implements VideoProviderAdapter {
     config: { baseUrl: string; apiKey: string; model: string },
     params: { prompt: string; firstFrameUrl?: string; lastFrameUrl?: string; duration?: number }
   ): ProviderRequest {
-    const model = config.model || 'MiniMax-Video-01'
-    const duration = params.duration || 5
+    const model = config.model || 'MiniMax-Hailuo-2.3'
+    const duration = params.duration || 6
 
-    const content: Array<Record<string, unknown>> = [
-      {
-        type: 'text',
-        text: `${params.prompt} --ratio 16:9 --dur ${duration}`,
-      },
-    ]
+    // Build the prompt string, appending first frame reference if provided
+    let prompt = params.prompt
 
     if (params.firstFrameUrl) {
-      content.push({
-        type: 'image_url',
-        image_url: { url: params.firstFrameUrl },
-        role: 'first_frame',
-      })
+      prompt = `${prompt}\n[参考图: ${params.firstFrameUrl}]`
     }
 
-    if (params.lastFrameUrl) {
-      content.push({
-        type: 'image_url',
-        image_url: { url: params.lastFrameUrl },
-        role: 'last_frame',
-      })
+    const body: Record<string, unknown> = {
+      model,
+      prompt,
+      duration,
+      resolution: '768P',
     }
 
     return {
       url: joinProviderUrl(config.baseUrl, '/v1', '/video_generation'),
       method: 'POST',
       headers: { Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json' },
-      body: { model, content },
+      body,
     }
   }
 
@@ -68,7 +59,7 @@ export class MiniMaxVideoAdapter implements VideoProviderAdapter {
     taskId: string
   ): ProviderRequest | null {
     return {
-      url: joinProviderUrl(config.baseUrl, '/v1', `/video_generation/task/${taskId}`),
+      url: `${joinProviderUrl(config.baseUrl, '/v1', '/query/video_generation')}?task_id=${taskId}`,
       method: 'GET',
       headers: { Authorization: `Bearer ${config.apiKey}` },
       body: null,
@@ -83,27 +74,24 @@ export class MiniMaxVideoAdapter implements VideoProviderAdapter {
     const resp = result as Record<string, unknown>
     const status = resp.status as string
 
-    if (status === 'completed' || status === 'succeeded') {
-      const videoUrl = resp.video_url as string | undefined
-      if (!videoUrl) {
-        return { status: 'failed', error: 'MiniMax: Task completed but no video_url returned' }
+    if (status === 'Success' || status === 'success' || status === 'Succeeded' || status === 'succeeded') {
+      const fileId = resp.file_id as string | undefined
+      if (!fileId) {
+        return { status: 'failed', error: 'MiniMax: Task completed but no file_id returned' }
       }
+      const videoUrl = `https://api.minimaxi.com/v1/files/retrieve?file_id=${fileId}`
       return { status: 'completed', videoUrl }
     }
 
-    if (status === 'failed') {
-      return {
-        status: 'failed',
-        error: `MiniMax: Task failed - ${JSON.stringify(resp.error || resp)}`,
-      }
+    if (status === 'Fail' || status === 'fail' || status === 'Failed' || status === 'failed') {
+      return { status: 'failed', error: `MiniMax: Task failed - ${JSON.stringify(resp.error || resp)}` }
     }
 
-    // Running / Processing
-    if (status === 'running' || status === 'processing') {
-      return { status: 'processing' }
+    if (status === 'Preparing' || status === 'Queueing') {
+      return { status: 'pending' }
     }
 
-    return { status: 'pending' }
+    return { status: 'processing' }
   }
 }
 

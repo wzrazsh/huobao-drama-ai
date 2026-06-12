@@ -192,6 +192,21 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
       ],
     },
     {
+      provider: 'minimax',
+      name: 'MiniMax',
+      defaultBaseUrl: 'https://api.minimaxi.com/v1',
+      defaultModel: 'MiniMax-M3',
+      description: 'MiniMax M 系列 — M3 最强 Agent/Coding SOTA，1M 上下文，Token Plan 覆盖全模态',
+      envKey: 'MINIMAX_API_KEY',
+      availableModels: [
+        { id: 'MiniMax-M3', name: 'MiniMax M3', tags: ['推荐', '最新', '最强'] },
+        { id: 'MiniMax-M2.7', name: 'MiniMax M2.7', tags: ['最新'] },
+        { id: 'MiniMax-M2.7-highspeed', name: 'MiniMax M2.7 HighSpeed', tags: ['快速', '最新'] },
+        { id: 'MiniMax-M2.5', name: 'MiniMax M2.5' },
+        { id: 'MiniMax-M2.5-highspeed', name: 'MiniMax M2.5 HighSpeed', tags: ['快速'] },
+      ],
+    },
+    {
       provider: 'custom',
       name: '自定义 OpenAI 兼容',
       defaultBaseUrl: '',
@@ -253,12 +268,13 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
     {
       provider: 'minimax',
       name: 'MiniMax',
-      defaultBaseUrl: 'https://api.minimax.chat',
-      defaultModel: 'MiniMax-Image-01',
+      defaultBaseUrl: 'https://api.minimaxi.com',
+      defaultModel: 'image-01',
       description: 'MiniMax 图片生成 — 只需提供 API Key 即可使用，支持参考图',
       envKey: 'MINIMAX_API_KEY',
       availableModels: [
-        { id: 'MiniMax-Image-01', name: 'MiniMax Image 01', tags: ['推荐'] },
+        { id: 'image-01', name: 'image-01', tags: ['推荐'] },
+        { id: 'image-01-live', name: 'image-01 Live', tags: ['画风'] },
       ],
     },
     {
@@ -307,14 +323,14 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
     {
       provider: 'minimax',
       name: 'MiniMax 海螺 AI',
-      defaultBaseUrl: 'https://api.minimax.chat',
-      defaultModel: 'minimax-hailuo-2.3',
+      defaultBaseUrl: 'https://api.minimaxi.com',
+      defaultModel: 'MiniMax-Hailuo-2.3',
       description: 'MiniMax 海螺 AI 视频生成 — 只需提供 API Key 即可使用',
       envKey: 'MINIMAX_API_KEY',
       availableModels: [
-        { id: 'minimax-hailuo-2.3', name: '海螺 2.3', tags: ['推荐', '最新'] },
-        { id: 'minimax-hailuo-2.3-fast', name: '海螺 2.3 Fast', tags: ['最新', '快速'] },
-        { id: 'minimax-hailuo-02', name: '海螺 02' },
+        { id: 'MiniMax-Hailuo-2.3', name: '海螺 2.3', tags: ['推荐', '最新'] },
+        { id: 'MiniMax-Hailuo-2.3-Fast', name: '海螺 2.3 Fast', tags: ['最新', '快速'] },
+        { id: 'MiniMax-Hailuo-02', name: '海螺 02' },
         { id: 't2v-01', name: 'T2V-01 文生视频' },
         { id: 't2v-01-director', name: 'T2V-01 Director 导演模式', tags: ['专业'] },
       ],
@@ -382,12 +398,13 @@ export const PROVIDER_PRESETS: Record<AiCategory, ProviderPreset[]> = {
     {
       provider: 'minimax',
       name: 'MiniMax',
-      defaultBaseUrl: 'https://api.minimax.chat',
+      defaultBaseUrl: 'https://api.minimaxi.com',
       defaultModel: 'speech-2.8-hd',
       description: 'MiniMax 语音合成 — 只需提供 API Key 即可使用，高质量中文语音',
       envKey: 'MINIMAX_API_KEY',
       availableModels: [
         { id: 'speech-2.8-hd', name: 'Speech 2.8 HD', tags: ['推荐', '高清'] },
+        { id: 'speech-2.8-turbo', name: 'Speech 2.8 Turbo', tags: ['最新', '快速'] },
         { id: 'speech-2.6', name: 'Speech 2.6', tags: ['快速'] },
       ],
     },
