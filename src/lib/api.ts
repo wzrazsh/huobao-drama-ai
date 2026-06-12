@@ -451,6 +451,11 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }),
+
+    delete: (characterId: string) =>
+      fetch(`/api/characters/${characterId}`, { method: 'DELETE' }).then(r => {
+        if (!r.ok) throw new Error(`Delete character failed: ${r.status}`)
+      }),
   },
 
   // ---- Character Appearances ----
