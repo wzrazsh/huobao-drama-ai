@@ -44,6 +44,7 @@ async function upsertAppearance(
       where: { id: existing.id },
       data: {
         imageUrl: data.imageUrl,
+        // Each view gets its own Appearance record, so imageUrls is always a single-element array
         imageUrls: JSON.stringify([data.imageUrl]),
         selectedIndex: 0,
         imagePrompt: data.imagePrompt,
@@ -99,12 +100,6 @@ export async function POST(request: NextRequest) {
     // Build description from character appearance
     const appearanceDesc =
       character.appearance || `${character.name}, ${character.gender}`
-    const description = [
-      appearanceDesc,
-      character.personality ? `Personality: ${character.personality}` : '',
-    ]
-      .filter(Boolean)
-      .join('. ')
 
     const negativePrompt =
       'blurry, low quality, distorted face, extra limbs, deformed, watermark, text, signature, cartoon, anime'
@@ -246,7 +241,13 @@ export async function POST(request: NextRequest) {
         })
 
         results.push({ label, imageUrl })
-      } catch (err) {
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name === 'AsyncTaskError' && err.message.startsWith('ASYNC_TASK:')) {
+          console.log(`View "${label}" started async task: ${err.message}`)
+          // For now, log and continue — individual taskId polling is out of scope
+          // The view will be regenerated on next batch call
+          continue
+        }
         console.error(`Failed to generate view "${label}":`, err)
         // Continue with other views on failure
       }
