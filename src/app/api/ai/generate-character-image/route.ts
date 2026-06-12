@@ -123,15 +123,16 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      let base64Image: string
-      let imagePrompt: string
-
       try {
+        let base64Image: string
+        let imagePrompt: string
         imagePrompt = buildViewPrompt(character, mappedLabel, style)
+        if (mappedLabel !== '面部特写') {
+          imagePrompt += ', same character as the front-facing portrait, consistent appearance, same outfit, same hairstyle'
+        }
         base64Image = await aiClient.generateImage(imagePrompt, negativePrompt, {
           width: mappedLabel === '面部特写' ? 1024 : 768,
           height: 1024,
-          referenceImages,
         })
       } catch (error: unknown) {
         if (error instanceof Error && error.name === 'AsyncTaskError' && error.message.startsWith('ASYNC_TASK:')) {
@@ -198,20 +199,17 @@ export async function POST(request: NextRequest) {
 
     for (const label of ALL_VIEW_LABELS) {
       try {
-        const refs: string[] = []
-        // 面部特写 has no reference; other views use face close-up as reference
-        if (label !== '面部特写' && faceCloseUpUrl) {
-          refs.push(faceCloseUpUrl)
-        }
-
-        const imagePrompt = buildViewPrompt(character, label, style)
+        // Note: subject_reference requires publicly accessible URLs (works on Vercel only).
+        // Locally, we rely on prompt-based consistency instructions instead.
+        const imagePrompt = label === '面部特写'
+          ? buildViewPrompt(character, label, style)
+          : buildViewPrompt(character, label, style) + ', same character as the front-facing portrait, consistent appearance, same outfit, same hairstyle'
         const base64Image = await aiClient.generateImage(
           imagePrompt,
           negativePrompt,
           {
             width: label === '面部特写' ? 1024 : 768,
             height: 1024,
-            referenceImages: refs.length > 0 ? refs : undefined,
           }
         )
 
