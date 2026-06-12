@@ -292,7 +292,10 @@ export class MiniMaxImageAdapter implements ImageProviderAdapter {
     }
 
     if (params.referenceImages?.length) {
-      body.image = params.referenceImages
+      body.subject_reference = params.referenceImages.map(url => ({
+        type: 'character',
+        image_file: url,
+      }))
     }
 
     return {
