@@ -12,6 +12,41 @@ import { db } from '@/lib/db'
 export type { AiCategory, ModelOption, ProviderPreset } from '@/lib/provider-presets'
 export { PROVIDER_PRESETS } from '@/lib/provider-presets'
 
+
+// ============================================================
+// Character View Definitions — for multi-viewport character image generation
+// ============================================================
+
+export type ViewLabel = '面部特写' | '全身正面' | '全身背面' | '全身侧面'
+
+export interface ViewDef {
+  aspectRatio: string
+  promptSuffix: string
+  negativeSuffix: string
+}
+
+export const VIEW_DEFS: Record<ViewLabel, ViewDef> = {
+  '面部特写': {
+    aspectRatio: '1:1',
+    promptSuffix: 'close-up portrait, face centered, looking at camera, shoulders visible, facial features detailed, cinematic lighting, shallow depth of field',
+    negativeSuffix: 'full body, half body, multiple people, blurry face, bad anatomy',
+  },
+  '全身正面': {
+    aspectRatio: '3:4',
+    promptSuffix: 'full body front view, standing upright, whole outfit visible from head to toe, plain solid background, feet on ground, hands visible at sides, clothing details sharp, full length portrait',
+    negativeSuffix: 'close-up, portrait, cropped, sitting, back view, side view',
+  },
+  '全身背面': {
+    aspectRatio: '3:4',
+    promptSuffix: 'full body back view, standing, seen from behind, entire back of clothing visible, back of hair visible, back of shoes visible, plain solid background',
+    negativeSuffix: 'close-up, front view, face visible, sitting, side',
+  },
+  '全身侧面': {
+    aspectRatio: '3:4',
+    promptSuffix: 'full body side view, standing, profile view, entire silhouette visible, side profile clearly shown, plain solid background',
+    negativeSuffix: 'close-up, front view, back view, sitting',
+  },
+}
 // Import for internal use
 import { PROVIDER_PRESETS, type AiCategory, type ProviderPreset } from '@/lib/provider-presets'
 
@@ -655,6 +690,23 @@ export const aiClient = {
       height: 1024,
       referenceImages,
     })
+  },
+
+  async generateCharacterViews(
+    characterId: string,
+    style?: string
+  ): Promise<{ label: ViewLabel; imageUrl: string }[]> {
+    // Stub — full implementation in API route
+    throw new Error('Not implemented directly — use POST /api/ai/generate-character-image')
+  },
+
+  async regenerateCharacterView(
+    characterId: string,
+    viewLabel: ViewLabel,
+    referenceUrl?: string
+  ): Promise<string> {
+    // Stub — full implementation in API route
+    throw new Error('Not implemented directly — use POST /api/ai/generate-character-image')
   },
 
   async generateStoryboardFrame(
