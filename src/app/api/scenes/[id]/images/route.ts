@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { aiClient } from '@/lib/ai-config'
-import { collectSceneReferences } from '@/lib/reference-collector'
 import { saveMediaFile } from '@/lib/file-storage'
-
 // GET /api/scenes/[id]/images - List all images for a scene
 export async function GET(
   _request: NextRequest,
@@ -63,7 +61,7 @@ export async function POST(
 
     if (generateImage) {
       // Build scene prompt
-      const scenePrompt = scene.prompt || finalDescription || [
+      let scenePrompt = scene.prompt || finalDescription || [
         'Cinematic establishing shot,',
         style ? `${style} style,` : '',
         scene.location,
@@ -72,27 +70,31 @@ export async function POST(
         'professional cinematography, high quality, film still',
       ].filter(Boolean).join(' ')
 
-      const negativePrompt =
-        'blurry, low quality, amateur, cartoon, anime, watermark, text overlay, people, characters'
-
-      // Collect reference images from existing scene images for consistency
-      let autoRefs = await collectSceneReferences(sceneId)
-
-      // Merge with explicitly provided referenceImages
-      if (referenceImages?.length) {
-        const merged = [...referenceImages, ...autoRefs]
-        autoRefs = Array.from(new Set(merged)).filter(Boolean)
+      // Add character appearance info to scene prompt for consistency
+      if (scene.dramaId) {
+        const characters = await db.character.findMany({
+          where: { dramaId: scene.dramaId },
+          select: { name: true, appearance: true, imageUrl: true },
+        })
+        const relevantChars = characters.filter(c =>
+          c.appearance && scenePrompt.toLowerCase().includes(c.name.toLowerCase())
+        )
+        if (relevantChars.length > 0) {
+          const charDesc = relevantChars
+            .map(c => `${c.name}: ${c.appearance}`)
+            .join('; ')
+          scenePrompt += `, Characters present: [${charDesc}], they MUST look exactly as described`
+        }
       }
 
-      // Filter out invalid URLs
-      autoRefs = autoRefs.filter(
-        (url) => url && url.trim() && (url.startsWith('data:') || url.startsWith('http') || url.startsWith('/api/files/'))
-      )
+      const negativePrompt =
+        'blurry, low quality, amateur, cartoon, anime, watermark, text overlay'
 
+      // Note: subject_reference requires public URLs (works on Vercel only).
+      // Locally, we skip reference images and rely on prompt+character descriptions.
       const base64Image = await aiClient.generateImage(scenePrompt, negativePrompt, {
         width: 1344,
         height: 768,
-        referenceImages: autoRefs.length > 0 ? autoRefs : undefined,
       })
 
       // Save to file storage instead of base64 data URL
