@@ -44,7 +44,14 @@ export async function GET(
           orderBy: { episodeNumber: 'asc' },
           include: { _count: { select: { storyboards: true } } },
         },
-        characters: { orderBy: { createdAt: 'asc' } },
+        characters: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            appearances: {
+              orderBy: { appearanceIndex: 'asc' },
+            },
+          },
+        },
         scenes: { orderBy: { createdAt: 'asc' } },
         props: { orderBy: { createdAt: 'asc' } },
         novel: true,

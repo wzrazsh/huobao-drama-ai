@@ -84,6 +84,7 @@ interface UnifiedAsset {
   createdAt: string
   // type-specific extra data
   raw: Character | Scene | Prop
+  views?: Array<{ label: string; imageUrl: string }>
 }
 
 interface BatchProgress {
@@ -203,6 +204,11 @@ export function AssetWorkbench() {
     const assets: UnifiedAsset[] = []
 
     for (const c of drama.characters || []) {
+      const appearances = (c as any).appearances || []
+      const views = appearances
+        .filter((a: any) => a.imageUrl)
+        .map((a: any) => ({ label: a.label, imageUrl: a.imageUrl }))
+
       assets.push({
         id: c.id,
         name: c.name,
@@ -213,6 +219,7 @@ export function AssetWorkbench() {
         episodeIds: c.episodeIds,
         createdAt: c.createdAt,
         raw: c,
+        views,
       })
     }
 
@@ -1267,6 +1274,9 @@ function AssetCard({
 }) {
   const colors = TYPE_COLORS[asset.type]
   const Icon = colors.icon
+  const hasViews = asset.type === 'character' && asset.views && asset.views.length > 1
+  const [viewIndex, setViewIndex] = useState(0)
+  const displayUrl = hasViews ? asset.views![viewIndex]?.imageUrl : asset.imageUrl
 
   return (
     <Card
@@ -1276,9 +1286,9 @@ function AssetCard({
       <CardContent className="p-3 space-y-2">
         {/* Image / Placeholder */}
         <div className="aspect-square rounded-md overflow-hidden bg-muted/30 relative">
-          {asset.imageUrl ? (
+          {displayUrl ? (
             <img
-              src={asset.imageUrl}
+              src={displayUrl}
               alt={asset.name}
               className="w-full h-full object-cover"
             />
@@ -1287,12 +1297,26 @@ function AssetCard({
               <Icon className={`size-8 ${colors.text} opacity-50`} />
             </div>
           )}
+          {/* View indicator dots (only for characters with multiple views) */}
+          {hasViews && (
+            <div className="absolute bottom-1.5 left-1/2 -translate-x-1/2 flex gap-1">
+              {asset.views!.map((v, i) => (
+                <button
+                  key={v.label}
+                  className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                    i === viewIndex ? 'bg-white shadow-sm' : 'bg-white/40'
+                  }`}
+                  onClick={(e) => { e.stopPropagation(); setViewIndex(i) }}
+                  title={v.label}
+                />
+              ))}
+            </div>
+          )}
           {/* Hover overlay */}
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
             <Eye className="size-5 text-white" />
           </div>
         </div>
-
         {/* Info */}
         <div>
           <div className="flex items-center gap-1.5">
