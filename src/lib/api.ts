@@ -625,13 +625,23 @@ export const api = {
         body: JSON.stringify({ prompt, size, episodeId, dialogueChar, sceneLocation }),
       }),
 
-    generateCharacterImage: (characterId: string, style?: string) =>
-      request<{ character: Character; imageUrl: string }>(
+    generateCharacterImage: (characterId: string, style?: string, viewLabel?: string) =>
+      request<{ imageUrl?: string; viewLabel?: string; views?: Array<{ label: string; imageUrl: string }> }>(
         '/api/ai/generate-character-image',
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ characterId, style }),
+          body: JSON.stringify({ characterId, style, viewLabel }),
+        }
+      ),
+
+    regenerateCharacterView: (characterId: string, viewLabel: string, referenceUrl?: string) =>
+      request<{ imageUrl: string; viewLabel: string }>(
+        '/api/ai/generate-character-image',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ characterId, viewLabel, referenceImages: referenceUrl ? [referenceUrl] : undefined }),
         }
       ),
 
