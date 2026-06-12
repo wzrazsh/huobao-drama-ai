@@ -21,6 +21,16 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -138,6 +148,9 @@ export function AssetWorkbench() {
   const [detailAsset, setDetailAsset] = useState<UnifiedAsset | null>(null)
   const [editPrompt, setEditPrompt] = useState('')
   const [isEditing, setIsEditing] = useState(false)
+
+  // Delete confirmation
+  const [deleteTarget, setDeleteTarget] = useState<UnifiedAsset | null>(null)
 
   // Add manual dialog
   const [showAddDialog, setShowAddDialog] = useState(false)
@@ -415,20 +428,26 @@ export function AssetWorkbench() {
   }
 
   const handleDeleteAsset = async (asset: UnifiedAsset) => {
+    setDeleteTarget(asset)
+  }
+
+  const confirmDelete = async () => {
+    const asset = deleteTarget
+    if (!asset) return
+    setDeleteTarget(null)
     try {
       if (asset.type === 'character') {
-        // Characters don't have a direct delete in the API, skip
-        toast({ title: '角色暂不支持删除' })
-        return
+        await api.characters.delete(asset.id)
+        toast({ title: `角色「${asset.name}」已删除` })
       } else if (asset.type === 'scene') {
-        // Scenes don't have a direct delete in the API, skip
         toast({ title: '场景暂不支持删除' })
         return
       } else if (asset.type === 'prop') {
         await api.props.delete(asset.id)
-        toast({ title: '道具已删除' })
+        toast({ title: `道具「${asset.name}」已删除` })
       }
       await loadDrama()
+      await loadExtractStatus()
     } catch (err: any) {
       toast({ title: '删除失败', description: err.message, variant: 'destructive' })
     }
@@ -902,7 +921,7 @@ export function AssetWorkbench() {
         )}
 
         {/* ── 右素材面板 ── */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0">
           {/* Header bar */}
           <div className="border-b border-border px-4 py-2 flex items-center gap-3 shrink-0">
             <div className="relative flex-1 max-w-xs">
@@ -962,7 +981,7 @@ export function AssetWorkbench() {
           </div>
 
           {/* Asset Grid / List */}
-          <ScrollArea className="flex-1">
+          <div className="flex-1 overflow-y-auto">
             {filteredAssets.length > 0 ? (
               viewMode === 'grid' ? (
                 <div className="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -1022,7 +1041,7 @@ export function AssetWorkbench() {
                 </div>
               </div>
             )}
-          </ScrollArea>
+          </div>
         </div>
       </div>
 
@@ -1208,6 +1227,27 @@ export function AssetWorkbench() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Delete Confirmation Dialog ── */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogDescription>
+              确定要删除{deleteTarget && (
+                <>{deleteTarget.type === 'character' ? '角色' : deleteTarget.type === 'scene' ? '场景' : '道具'}
+                「<span className="font-medium">{deleteTarget.name}</span>」</>
+              )}吗？此操作不可撤销。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive hover:bg-destructive/90">
+              确认删除
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
@@ -1289,17 +1329,15 @@ function AssetCard({
           >
             <Pencil className="size-3" />
           </Button>
-          {asset.type === 'prop' && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="size-6 p-0 text-destructive hover:text-destructive"
-              onClick={(e) => { e.stopPropagation(); onDelete(asset) }}
-              title="删除"
-            >
-              <Trash2 className="size-3" />
-            </Button>
-          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="size-6 p-0 text-destructive hover:text-destructive"
+            onClick={(e) => { e.stopPropagation(); onDelete(asset) }}
+            title="删除"
+          >
+            <Trash2 className="size-3" />
+          </Button>
         </div>
       </CardContent>
     </Card>
@@ -1365,17 +1403,15 @@ function AssetListItem({
         >
           <ImageIcon className="size-3.5" />
         </Button>
-        {asset.type === 'prop' && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="size-7 p-0 text-destructive hover:text-destructive"
-            onClick={(e) => { e.stopPropagation(); onDelete(asset) }}
-            title="删除"
-          >
-            <Trash2 className="size-3.5" />
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="size-7 p-0 text-destructive hover:text-destructive"
+          onClick={(e) => { e.stopPropagation(); onDelete(asset) }}
+          title="删除"
+        >
+          <Trash2 className="size-3.5" />
+        </Button>
       </div>
     </div>
   )
