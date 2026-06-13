@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { saveMediaFile } from '@/lib/file-storage'
 import { requireDramaAccess, type PlatformActor } from '@/lib/platform/access'
 import { PlatformError } from '@/lib/platform/errors'
+import { buildCharacterIdentityPrompt } from '@/lib/character-prompts'
 
 export const CHARACTER_VIEW_LABELS = [
   '面部特写',
@@ -37,20 +38,18 @@ function buildViewPrompt(
     appearance: string
     personality: string
     role: string
+    imagePrompt?: string | null
   },
   viewLabel: CharacterViewLabel,
   style?: string
 ) {
   const definition = VIEW_DEFS[viewLabel as ViewLabel]
   return [
-    `Character design, ${style || character.role || 'cinematic'} style`,
-    character.name,
-    character.appearance,
-    character.personality
-      ? `Personality: expressing ${character.personality}`
-      : '',
+    style ? `${style} visual style` : 'cinematic photorealistic character reference',
+    `identity specification: ${buildCharacterIdentityPrompt(character)}`,
+    'single character only',
     definition.promptSuffix,
-    'single person, consistent identity, same face, same hairstyle, same outfit',
+    'preserve the exact identity, age, gender, facial features, hairstyle, outfit and color palette',
   ]
     .filter(Boolean)
     .join(', ')
@@ -77,6 +76,7 @@ export async function regenerateCharacterView(
       appearance: true,
       personality: true,
       role: true,
+      imagePrompt: true,
     },
   })
   if (!character) {
@@ -99,8 +99,7 @@ export async function regenerateCharacterView(
       imagePrompt,
       negativePrompt,
       {
-        width: input.viewLabel === '面部特写' ? 1024 : 768,
-        height: 1024,
+        size: input.viewLabel === '面部特写' ? '1024x1024' : '864x1152',
       }
     )
   } catch (error) {
@@ -168,7 +167,7 @@ export async function regenerateCharacterView(
   if (input.viewLabel === '面部特写') {
     await db.character.update({
       where: { id: character.id },
-      data: { imageUrl: saved.url, imagePrompt },
+      data: { imageUrl: saved.url },
     })
   }
 

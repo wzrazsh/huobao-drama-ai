@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { aiClient, VIEW_DEFS, type ViewLabel } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
 import { saveMediaFile } from '@/lib/file-storage'
+import { buildCharacterIdentityPrompt } from '@/lib/character-prompts'
 
 const ALL_VIEW_LABELS: ViewLabel[] = ['面部特写', '全身正面', '全身背面', '全身侧面']
 
@@ -21,19 +22,30 @@ const OLD_LABEL_MAP: Record<string, ViewLabel> = {
 }
 
 function buildViewPrompt(
-  character: { name: string; appearance?: string | null; personality?: string | null; role?: string | null },
+  character: {
+    name: string
+    imagePrompt?: string | null
+    appearance?: string | null
+    personality?: string | null
+  },
   viewLabel: ViewLabel,
   style?: string
 ): string {
   const view = VIEW_DEFS[viewLabel]
-  const styleTag = style || character.role || 'cinematic'
+  const identityPrompt = buildCharacterIdentityPrompt(character)
+  const stylePrompt = style === '写实'
+    ? 'photorealistic live-action character reference, natural skin texture, realistic human proportions'
+    : style ? `${style} visual style` : 'cinematic photorealistic character reference'
+
   return [
-    `Character design, ${styleTag} style,`,
-    character.name,
-    character.appearance,
-    character.personality ? `Personality: expressing ${character.personality}` : '',
+    stylePrompt,
+    `identity specification: ${identityPrompt}`,
+    'single character only',
     view.promptSuffix,
-    'consistent character design, same person, same outfit, same hairstyle',
+    `strict framing requirement: ${viewLabel === '面部特写'
+      ? 'head and shoulders portrait'
+      : 'full-length turnaround reference photograph, the complete human figure from the top of the head to both shoes entirely inside the frame, generous plain background margin above the head and below the shoes, subject occupies about 70 percent of the frame height'}`,
+    'preserve the exact identity, age, gender, facial features, hairstyle, outfit and color palette',
   ].filter(Boolean).join(', ')
 }
 
@@ -123,16 +135,13 @@ export async function POST(request: NextRequest) {
         )
       }
 
+      let imageResult: { base64: string; sourceUrl?: string }
+      let imagePrompt: string
       try {
-        let base64Image: string
-        let imagePrompt: string
         imagePrompt = buildViewPrompt(character, mappedLabel, style)
-        if (mappedLabel !== '面部特写') {
-          imagePrompt += ', same character as the front-facing portrait, consistent appearance, same outfit, same hairstyle'
-        }
-        base64Image = await aiClient.generateImage(imagePrompt, negativePrompt, {
-          width: mappedLabel === '面部特写' ? 1024 : 768,
-          height: 1024,
+        imageResult = await aiClient.generateImageResult(imagePrompt, negativePrompt, {
+          size: VIEW_DEFS[mappedLabel].aspectRatio === '1:1' ? '1024x1024' : '864x1152',
+          referenceImages,
         })
       } catch (error: unknown) {
         if (error instanceof Error && error.name === 'AsyncTaskError' && error.message.startsWith('ASYNC_TASK:')) {
@@ -148,7 +157,7 @@ export async function POST(request: NextRequest) {
         throw error
       }
 
-      const saveResult = await saveMediaFile(base64Image, {
+      const saveResult = await saveMediaFile(imageResult.base64, {
         mimeType: 'image/png',
         category: 'characters',
         dramaId: character.dramaId,
@@ -168,11 +177,12 @@ export async function POST(request: NextRequest) {
         console.error('AI Vision description extraction failed (non-fatal):', visionError)
       }
 
-      // For 面部特写, also update Character.imageUrl (backward compat)
+      // For 面部特写, also update Character.imageUrl (backward compat).
+      // Character.imagePrompt is the asset-level character prompt and must be preserved.
       if (mappedLabel === '面部特写') {
         await db.character.update({
           where: { id: characterId },
-          data: { imageUrl, imagePrompt },
+          data: { imageUrl },
         })
       }
 
@@ -190,30 +200,35 @@ export async function POST(request: NextRequest) {
           imageUrls: JSON.parse(appearance.imageUrls),
         },
         visionDescription,
+        sourceReferenceUrl: imageResult.sourceUrl,
       })
     } // end if (viewLabel)
 
     // === Batch mode: generate all 4 views ===
-    const results: Array<{ label: ViewLabel; imageUrl: string }> = []
-    let faceCloseUpUrl: string | null = null
+    const results: Array<{ label: ViewLabel; imageUrl: string; imagePrompt: string }> = []
+    const failures: Array<{ label: ViewLabel; error: string }> = []
+    let faceReferenceUrl: string | null = null
+    let fullBodyReferenceUrl: string | null = null
 
     for (const label of ALL_VIEW_LABELS) {
       try {
-        // Note: subject_reference requires publicly accessible URLs (works on Vercel only).
-        // Locally, we rely on prompt-based consistency instructions instead.
-        const imagePrompt = label === '面部特写'
-          ? buildViewPrompt(character, label, style)
-          : buildViewPrompt(character, label, style) + ', same character as the front-facing portrait, consistent appearance, same outfit, same hairstyle'
-        const base64Image = await aiClient.generateImage(
+        const imagePrompt = buildViewPrompt(character, label, style)
+        const imageResult = await aiClient.generateImageResult(
           imagePrompt,
           negativePrompt,
           {
-            width: label === '面部特写' ? 1024 : 768,
-            height: 1024,
+            size: VIEW_DEFS[label].aspectRatio === '1:1' ? '1024x1024' : '864x1152',
+            referenceImages: label === '面部特写'
+              ? referenceImages
+              : label === '全身正面'
+                ? faceReferenceUrl ? [faceReferenceUrl] : referenceImages
+                : fullBodyReferenceUrl
+                  ? [fullBodyReferenceUrl]
+                  : faceReferenceUrl ? [faceReferenceUrl] : referenceImages,
           }
         )
 
-        const saveResult = await saveMediaFile(base64Image, {
+        const saveResult = await saveMediaFile(imageResult.base64, {
           mimeType: 'image/png',
           category: 'characters',
           dramaId: character.dramaId,
@@ -234,12 +249,15 @@ export async function POST(request: NextRequest) {
             console.error('AI Vision description extraction failed (non-fatal):', visionError)
           }
 
-          // Save face close-up URL for later views and update Character.imageUrl
-          faceCloseUpUrl = imageUrl
+          // Save face close-up URL for later views and update Character.imageUrl.
+          // Preserve Character.imagePrompt as the asset-level character prompt.
+          faceReferenceUrl = imageResult.sourceUrl || null
           await db.character.update({
             where: { id: characterId },
-            data: { imageUrl, imagePrompt },
+            data: { imageUrl },
           })
+        } else if (label === '全身正面') {
+          fullBodyReferenceUrl = imageResult.sourceUrl || null
         }
 
         await upsertAppearance(characterId, label, {
@@ -248,20 +266,24 @@ export async function POST(request: NextRequest) {
           description: visionDescription || appearanceDesc,
         })
 
-        results.push({ label, imageUrl })
+        results.push({ label, imageUrl, imagePrompt })
       } catch (err: unknown) {
         if (err instanceof Error && err.name === 'AsyncTaskError' && err.message.startsWith('ASYNC_TASK:')) {
-          console.log(`View "${label}" started async task: ${err.message}`)
-          // For now, log and continue — individual taskId polling is out of scope
-          // The view will be regenerated on next batch call
-          continue
+          failures.push({ label, error: '该供应商返回异步任务，批量角色生成暂不支持' })
+        } else {
+          failures.push({
+            label,
+            error: err instanceof Error ? err.message : String(err),
+          })
         }
         console.error(`Failed to generate view "${label}":`, err)
-        // Continue with other views on failure
       }
     }
 
-    return NextResponse.json({ views: results })
+    return NextResponse.json(
+      { views: results, failures },
+      { status: results.length > 0 ? 200 : 502 }
+    )
   } catch (error) {
     console.error('Failed to generate character image:', error)
     return NextResponse.json(
