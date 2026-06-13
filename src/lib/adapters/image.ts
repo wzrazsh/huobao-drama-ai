@@ -260,7 +260,10 @@ export class MiniMaxImageAdapter implements ImageProviderAdapter {
     config: { baseUrl: string; apiKey: string; model: string },
     params: { prompt: string; size?: string; negativePrompt?: string; referenceImages?: string[]; referenceImagesData?: ReferenceImageData[] }
   ): ProviderRequest {
-    const url = joinProviderUrl(config.baseUrl, '/v1', '/image_generation')
+    const baseUrl = config.baseUrl
+      .replace('https://api.minimax.chat', 'https://api.minimaxi.com')
+      .replace('https://api.minimax.io', 'https://api.minimaxi.com')
+    const url = joinProviderUrl(baseUrl, '/v1', '/image_generation')
 
     const model = config.model || 'image-01'
     const sizeStr = params.size || '1024x1024'
@@ -271,6 +274,7 @@ export class MiniMaxImageAdapter implements ImageProviderAdapter {
       '1024x1024': '1:1',
       '1920x1080': '16:9',
       '1280x720': '16:9',
+      '1344x768': '16:9',
       '1152x864': '4:3',
       '1248x832': '3:2',
       '832x1248': '2:3',
@@ -285,16 +289,18 @@ export class MiniMaxImageAdapter implements ImageProviderAdapter {
       prompt: params.prompt,
       aspect_ratio: aspectRatio,
       n: 1,
+      response_format: 'url',
+      prompt_optimizer: false,
+      aigc_watermark: false,
     }
 
-    if (params.negativePrompt) {
-      body.prompt_optimizer = true
-    }
+    const publicReferenceImages = params.referenceImages
+      ?.filter((referenceUrl) => /^https?:\/\//i.test(referenceUrl))
 
-    if (params.referenceImages?.length) {
-      body.subject_reference = params.referenceImages.map(url => ({
+    if (publicReferenceImages?.length) {
+      body.subject_reference = publicReferenceImages.map((referenceUrl) => ({
         type: 'character',
-        image_file: url,
+        image_file: referenceUrl,
       }))
     }
 

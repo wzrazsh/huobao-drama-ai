@@ -452,6 +452,13 @@ export const api = {
         body: JSON.stringify(data),
       }),
 
+    update: (dramaId: string, characterId: string, data: Partial<Character>) =>
+      request<{ character: Character }>(`/api/dramas/${dramaId}/characters`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ characterId, ...data }),
+      }),
+
     delete: (characterId: string) =>
       fetch(`/api/characters/${characterId}`, { method: 'DELETE' }).then(r => {
         if (!r.ok) throw new Error(`Delete character failed: ${r.status}`)
@@ -625,13 +632,22 @@ export const api = {
         body: JSON.stringify({ prompt, size, episodeId, dialogueChar, sceneLocation }),
       }),
 
-    generateCharacterImage: (characterId: string, style?: string, viewLabel?: string) =>
-      request<{ imageUrl?: string; viewLabel?: string; views?: Array<{ label: string; imageUrl: string }> }>(
+    generateCharacterImage: (characterId: string, style?: string, viewLabel?: string, referenceImages?: string[]) =>
+      request<{
+        status?: 'processing'
+        taskId?: string
+        imageUrl?: string
+        viewLabel?: string
+        sourceReferenceUrl?: string
+        appearance?: any
+        views?: Array<{ label: string; imageUrl: string; imagePrompt: string }>
+        failures?: Array<{ label: string; error: string }>
+      }>(
         '/api/ai/generate-character-image',
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ characterId, style, viewLabel }),
+          body: JSON.stringify({ characterId, style, viewLabel, referenceImages }),
         }
       ),
 
@@ -657,7 +673,11 @@ export const api = {
       }),
 
     generateSceneImage: (sceneId: string, style?: string) =>
-      request<{ scene: Scene; imageUrl: string }>('/api/ai/generate-scene-image', {
+      request<{
+        scene: Scene
+        imageUrl: string
+        references?: { characters: string[]; props: string[] }
+      }>('/api/ai/generate-scene-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sceneId, style }),

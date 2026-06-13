@@ -38,12 +38,12 @@ export const VIEW_DEFS: Record<ViewLabel, ViewDef> = {
   },
   '全身背面': {
     aspectRatio: '3:4',
-    promptSuffix: 'full body back view, standing, seen from behind, entire back of clothing visible, back of hair visible, back of shoes visible, plain solid background',
+    promptSuffix: 'full body rear orthographic view, standing and facing directly away from the camera, camera sees the back of the head and both shoulders symmetrically, entire back of clothing visible, back of hair visible, back of shoes visible, plain solid background',
     negativeSuffix: 'close-up, front view, face visible, sitting, side',
   },
   '全身侧面': {
     aspectRatio: '3:4',
-    promptSuffix: 'full body side view, standing, profile view, entire silhouette visible, side profile clearly shown, plain solid background',
+    promptSuffix: 'full body strict 90-degree left-facing orthographic side view, standing upright, head and torso aligned in exact profile, entire silhouette visible from head to shoes, plain solid background',
     negativeSuffix: 'close-up, front view, back view, sitting',
   },
 }
@@ -562,6 +562,15 @@ export const aiClient = {
     negativePrompt?: string,
     options?: { width?: number; height?: number; size?: string; referenceImages?: string[] }
   ): Promise<string> {
+    const result = await this.generateImageResult(prompt, negativePrompt, options)
+    return result.base64
+  },
+
+  async generateImageResult(
+    prompt: string,
+    negativePrompt?: string,
+    options?: { width?: number; height?: number; size?: string; referenceImages?: string[] }
+  ): Promise<{ base64: string; sourceUrl?: string }> {
     const provider = await getActiveProviderForUser('image', this._userId)
     if (!provider) {
       throw new Error('未配置图片生成供应商。请在设置中配置 API Key。')
@@ -571,7 +580,8 @@ export const aiClient = {
     const { getImageAdapter } = await import('@/lib/adapters/image')
     const adapter = getImageAdapter(provider.provider)
     const config = { baseUrl: provider.baseUrl, apiKey: provider.apiKey, model: provider.model }
-    const size = options?.size ?? '1024x1024'
+    const size = options?.size ??
+      (options?.width && options?.height ? `${options.width}x${options.height}` : '1024x1024')
 
     // Pre-fetch reference images as base64 for providers that need inline data (e.g., Gemini)
     let referenceImagesData: Array<{ base64: string; mimeType: string }> | undefined
@@ -599,13 +609,16 @@ export const aiClient = {
     // Sync response with URL
     if (!parsed.isAsync && parsed.imageUrl) {
       const imgRes = await fetch(parsed.imageUrl)
+      if (!imgRes.ok) {
+        throw new Error(`生成图片下载失败 (${imgRes.status})`)
+      }
       const buffer = Buffer.from(await imgRes.arrayBuffer())
-      return buffer.toString('base64')
+      return { base64: buffer.toString('base64'), sourceUrl: parsed.imageUrl }
     }
 
     // Sync response with base64
     if (!parsed.isAsync && parsed.imageBase64) {
-      return parsed.imageBase64
+      return { base64: parsed.imageBase64 }
     }
 
     // Async response — return taskId for client-side polling
@@ -617,7 +630,16 @@ export const aiClient = {
       throw err
     }
 
-    throw new Error('图片生成返回数据为空')
+    const providerMessage =
+      result?.base_resp?.status_msg ||
+      result?.base_resp?.status_message ||
+      result?.error?.message ||
+      result?.message
+    throw new Error(
+      providerMessage
+        ? `图片生成返回数据为空: ${String(providerMessage).slice(0, 300)}`
+        : `图片生成返回数据为空: ${JSON.stringify(result).slice(0, 500)}`
+    )
   },
 
   async _pollImageTask(
@@ -740,8 +762,8 @@ export const aiClient = {
       'blurry, low quality, amateur, cartoon, anime, watermark, text overlay, signature'
 
     return this.generateImage(framePrompt, negativePrompt, {
-      width: 1344,
-      height: 768,
+      width: 1280,
+      height: 720,
       referenceImages,
     })
   },
@@ -774,7 +796,7 @@ export const aiClient = {
       `${location},`,
       `${lighting},`,
       weatherTag ? `${weatherTag},` : '',
-      'no characters, no people, no figures,',
+      'include the people and important objects explicitly described in the scene,',
       'wide angle lens, deep depth of field,',
       'professional film production quality,',
       'rich atmospheric details, environmental storytelling,',
@@ -1188,7 +1210,7 @@ export const AI_SYSTEM_PROMPTS = {
     { "name": "角色名", "role": "protagonist/antagonist/supporting/extras", "gender": "male/female/unknown", "appearance": "外貌描写（300-500字详细描述，包含性别、年龄、体型、面部特征、发型、着装）", "personality": "性格特点描述" }
   ],
   "scenes": [
-    { "location": "地点名", "timeOfDay": "day/night/dawn/dusk", "description": "场景描述", "prompt": "用于AI图片生成的英文提示词（纯背景，不含人物）" }
+    { "location": "地点名", "timeOfDay": "day/night/dawn/dusk", "description": "场景描述", "prompt": "用于AI图片生成的英文提示词；如剧情中有角色或关键道具，必须写明其姓名、动作、位置和道具状态" }
   ]
 }
 
