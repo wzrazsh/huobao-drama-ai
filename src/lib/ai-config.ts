@@ -621,7 +621,7 @@ export const aiClient = {
   },
 
   async _pollImageTask(
-    adapter: import('@/lib/adapters/image').ImageProviderAdapter,
+    adapter: import('@/lib/adapters/types').ImageProviderAdapter,
     config: { baseUrl: string; apiKey: string; model: string },
     taskId: string,
     maxPolls = 24,
@@ -858,7 +858,7 @@ export const aiClient = {
   },
 
   async _pollVideoTask(
-    adapter: import('@/lib/adapters/video').VideoProviderAdapter,
+    adapter: import('@/lib/adapters/types').VideoProviderAdapter,
     config: { baseUrl: string; apiKey: string; model: string },
     taskId: string,
     maxPolls = 36,
