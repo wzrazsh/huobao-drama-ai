@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions, canCreateProject } from '@/lib/auth'
 import { db } from '@/lib/db'
+import { buildCharacterIdentityPrompt } from '@/lib/character-prompts'
 
 interface EpisodeInput {
   title: string
@@ -157,6 +158,11 @@ export async function POST(request: NextRequest) {
               role: char.role || 'supporting',
               gender: char.gender || 'unknown',
               appearance: char.description || '',
+              imagePrompt: buildCharacterIdentityPrompt({
+                name: char.name,
+                gender: char.gender,
+                appearance: char.description,
+              }),
             }))
             await tx.character.createMany({ data: charData })
             createdCharacters = await tx.character.findMany({

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { buildCharacterIdentityPrompt } from '@/lib/character-prompts';
 
 // GET /api/dramas/[id]/characters - List characters for a drama
 export async function GET(
@@ -43,6 +44,13 @@ export async function POST(
         age: age || '',
         appearance: appearance || '',
         personality: personality || '',
+        imagePrompt: buildCharacterIdentityPrompt({
+          name,
+          gender,
+          age,
+          appearance,
+          personality,
+        }),
       },
     });
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { aiClient, AI_SYSTEM_PROMPTS } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
+import { buildCharacterIdentityPrompt } from '@/lib/character-prompts'
 
 interface ExtractedData {
   characters: Array<{
@@ -76,6 +77,12 @@ export async function POST(request: NextRequest) {
             gender: char.gender || 'unknown',
             appearance: char.appearance || '',
             personality: char.personality || '',
+            imagePrompt: buildCharacterIdentityPrompt({
+              name: char.name || 'Unknown',
+              gender: char.gender,
+              appearance: char.appearance,
+              personality: char.personality,
+            }),
           },
         })
         savedCharacters.push(saved)
