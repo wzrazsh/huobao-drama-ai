@@ -93,6 +93,15 @@ interface BatchProgress {
   active: boolean
 }
 
+interface CharacterGenerationProgress {
+  assetId: string
+  current: number
+  total: number
+  label: string
+}
+
+const CHARACTER_VIEW_LABELS = ['面部特写', '全身正面', '全身背面', '全身侧面'] as const
+
 // ── Color mapping ──────────────────────────────────────────
 
 const TYPE_COLORS: Record<AssetType, { bg: string; text: string; border: string; accent: string; icon: typeof Users }> = {
@@ -144,6 +153,10 @@ export function AssetWorkbench() {
   // Batch generation state
   const [batchProgress, setBatchProgress] = useState<BatchProgress>({ current: 0, total: 0, active: false })
   const [imageSize, setImageSize] = useState<string>('1:1')
+  const [generatingAssetId, setGeneratingAssetId] = useState<string | null>(null)
+  const [characterGenerationProgress, setCharacterGenerationProgress] =
+    useState<CharacterGenerationProgress | null>(null)
+  const [regeneratingView, setRegeneratingView] = useState(false)
 
   // Detail dialog state
   const [detailAsset, setDetailAsset] = useState<UnifiedAsset | null>(null)
@@ -162,14 +175,16 @@ export function AssetWorkbench() {
 
   // ── Data Loading ──
   const loadDrama = useCallback(async () => {
-    if (!selectedDramaId) return
+    if (!selectedDramaId) return null
     try {
       const d = await api.dramas.get(selectedDramaId)
       setDrama(d)
       setCurrentDrama(d)
       setSelectedStyle(d.artStyle)
+      return d
     } catch {
       // Drama may not exist
+      return null
     }
   }, [selectedDramaId, setCurrentDrama])
 
@@ -425,42 +440,182 @@ export function AssetWorkbench() {
 
   const handleGenerateSingle = async (asset: UnifiedAsset) => {
     const style = selectedStyle || undefined
+    setGeneratingAssetId(asset.id)
     try {
       if (asset.type === 'character') {
-        await api.ai.generateCharacterImage(asset.id, style)
+        let faceReferenceUrl: string | undefined
+        let fullBodyReferenceUrl: string | undefined
+
+        for (let index = 0; index < CHARACTER_VIEW_LABELS.length; index++) {
+          const label = CHARACTER_VIEW_LABELS[index]
+          setCharacterGenerationProgress({
+            assetId: asset.id,
+            current: index + 1,
+            total: CHARACTER_VIEW_LABELS.length,
+            label,
+          })
+
+          const referenceUrl = label === '全身正面'
+            ? faceReferenceUrl
+            : label === '全身背面' || label === '全身侧面'
+              ? fullBodyReferenceUrl || faceReferenceUrl
+              : undefined
+          const result = await api.ai.generateCharacterImage(
+            asset.id,
+            style,
+            label,
+            referenceUrl ? [referenceUrl] : undefined
+          )
+          if (result.status === 'processing') {
+            throw new Error('图片供应商返回了异步任务，当前角色视图暂无法自动保存，请稍后重试')
+          }
+          if (!result.appearance || !result.imageUrl) {
+            throw new Error(`「${label}」生成结果为空`)
+          }
+          if (label === '面部特写') {
+            faceReferenceUrl = result.sourceReferenceUrl
+          } else if (label === '全身正面') {
+            fullBodyReferenceUrl = result.sourceReferenceUrl
+          }
+
+          const generatedView = {
+            id: result.appearance.id,
+            label,
+            imageUrl: result.imageUrl,
+            imagePrompt: result.appearance.imagePrompt || null,
+          }
+          setDetailAsset((previous) => {
+            if (!previous || previous.id !== asset.id) return previous
+            const views = [
+              ...(previous.views || []).filter((view) => view.label !== label),
+              generatedView,
+            ].sort(
+              (left, right) =>
+                CHARACTER_VIEW_LABELS.indexOf(left.label as typeof CHARACTER_VIEW_LABELS[number]) -
+                CHARACTER_VIEW_LABELS.indexOf(right.label as typeof CHARACTER_VIEW_LABELS[number])
+            )
+            return {
+              ...previous,
+              imageUrl: label === '面部特写' ? result.imageUrl! : previous.imageUrl,
+              views,
+            }
+          })
+          setActiveView(label)
+        }
       } else if (asset.type === 'scene') {
-        await api.ai.generateSceneImage(asset.id, style)
+        const result = await api.ai.generateSceneImage(asset.id, style)
+        setDetailAsset((previous) => previous && previous.id === asset.id ? {
+          ...previous,
+          imageUrl: result.imageUrl,
+          raw: result.scene,
+        } : previous)
+        const references = [
+          ...(result.references?.characters || []),
+          ...(result.references?.props || []),
+        ]
+        toast({
+          title: '图片生成完成',
+          description: references.length > 0
+            ? `已参考：${references.join('、')}`
+            : '该场景未匹配到已有角色或道具素材',
+        })
       } else if (asset.type === 'prop' && asset.imagePrompt) {
         await api.ai.generateImage(asset.imagePrompt, imageSize, undefined, undefined, undefined)
       }
-      toast({ title: '图片生成完成' })
-      await loadDrama()
-    } catch (err: any) {
-      toast({ title: '生成失败', description: err.message, variant: 'destructive' })
-    }
-  }
-  const handleRegenerateView = async () => {
-    if (!detailAsset || !activeView || !selectedDramaId) return
-    try {
-      const result = await api.ai.generateCharacterImage(detailAsset.id, selectedStyle || undefined, activeView)
-      toast({ title: `「${activeView}」已重新生成` })
-      await loadDrama()
-      // Update the detail asset's views from fresh drama data
-      const freshChar = drama?.characters?.find((c: any) => c.id === detailAsset.id)
-      if (freshChar) {
-        const appearances = (freshChar as any).appearances || []
-        const updatedViews = appearances
-          .filter((a: any) => a.imageUrl)
-          .map((a: any) => ({
-            id: a.id,
-            label: a.label,
-            imageUrl: a.imageUrl,
-            imagePrompt: a.imagePrompt || null,
-          }))
-        setDetailAsset(prev => prev ? { ...prev, views: updatedViews } : null)
+      if (asset.type !== 'scene') {
+        toast({ title: '图片生成完成' })
+      }
+      const refreshedDrama = await loadDrama()
+      if (asset.type === 'character' && refreshedDrama) {
+        const freshCharacter = refreshedDrama.characters?.find((character) => character.id === asset.id)
+        if (freshCharacter) {
+          const appearances = (freshCharacter as any).appearances || []
+          setDetailAsset((previous) => previous && previous.id === asset.id ? {
+            ...previous,
+            description: freshCharacter.appearance || freshCharacter.personality || '',
+            imagePrompt: freshCharacter.imagePrompt,
+            imageUrl: freshCharacter.imageUrl,
+            raw: freshCharacter,
+            views: appearances
+              .filter((appearance: any) => appearance.imageUrl)
+              .map((appearance: any) => ({
+                id: appearance.id,
+                label: appearance.label,
+                imageUrl: appearance.imageUrl,
+                imagePrompt: appearance.imagePrompt || null,
+              })),
+          } : previous)
+          setEditPrompt(freshCharacter.imagePrompt || '')
+        }
       }
     } catch (err: any) {
       toast({ title: '生成失败', description: err.message, variant: 'destructive' })
+    } finally {
+      setGeneratingAssetId(null)
+      setCharacterGenerationProgress(null)
+    }
+  }
+
+  const handleRegenerateView = async () => {
+    if (!detailAsset || !activeView || !selectedDramaId) return
+    setRegeneratingView(true)
+    try {
+      const faceView = detailAsset.views?.find((view) => view.label === '面部特写')
+      let referenceUrl: string | undefined
+      if (activeView !== '面部特写' && faceView?.imageUrl && typeof window !== 'undefined') {
+        const absoluteUrl = new URL(faceView.imageUrl, window.location.origin)
+        if (!['localhost', '127.0.0.1', '::1'].includes(absoluteUrl.hostname)) {
+          referenceUrl = absoluteUrl.toString()
+        }
+      }
+      const result = await api.ai.generateCharacterImage(
+        detailAsset.id,
+        selectedStyle || undefined,
+        activeView,
+        referenceUrl ? [referenceUrl] : undefined
+      )
+      if (result.status === 'processing') {
+        throw new Error('图片供应商返回了异步任务，当前视图暂无法自动保存，请稍后重试')
+      }
+      if (!result.appearance || !result.imageUrl) {
+        throw new Error(`「${activeView}」生成结果为空`)
+      }
+
+      const generatedView = {
+        id: result.appearance.id,
+        label: activeView,
+        imageUrl: result.imageUrl,
+        imagePrompt: result.appearance.imagePrompt || null,
+      }
+      setDetailAsset((previous) => previous ? {
+        ...previous,
+        imageUrl: activeView === '面部特写' ? result.imageUrl! : previous.imageUrl,
+        views: [
+          ...(previous.views || []).filter((view) => view.label !== activeView),
+          generatedView,
+        ].sort(
+          (left, right) =>
+            CHARACTER_VIEW_LABELS.indexOf(left.label as typeof CHARACTER_VIEW_LABELS[number]) -
+            CHARACTER_VIEW_LABELS.indexOf(right.label as typeof CHARACTER_VIEW_LABELS[number])
+        ),
+      } : null)
+      toast({ title: `「${activeView}」已重新生成` })
+      const refreshedDrama = await loadDrama()
+      const freshCharacter = refreshedDrama?.characters?.find(
+        (character) => character.id === detailAsset.id
+      )
+      if (freshCharacter) {
+        setDetailAsset((previous) => previous ? {
+          ...previous,
+          imagePrompt: freshCharacter.imagePrompt,
+          raw: freshCharacter,
+        } : null)
+        setEditPrompt(freshCharacter.imagePrompt || '')
+      }
+    } catch (err: any) {
+      toast({ title: '生成失败', description: err.message, variant: 'destructive' })
+    } finally {
+      setRegeneratingView(false)
     }
   }
 
@@ -530,7 +685,6 @@ export function AssetWorkbench() {
     if (asset.type === 'character' && asset.views && asset.views.length > 0) {
       const initialView = asset.views[0]
       setActiveView(initialView.label)
-      setEditPrompt(initialView.imagePrompt || asset.imagePrompt || '')
     } else {
       setActiveView('')
     }
@@ -540,31 +694,13 @@ export function AssetWorkbench() {
     if (!detailAsset || !selectedDramaId) return
     try {
       if (detailAsset.type === 'character') {
-        const currentView = activeView
-          ? detailAsset.views?.find((view) => view.label === activeView)
-          : undefined
-        if (currentView) {
-          await api.appearances.update(detailAsset.id, currentView.id, {
-            imagePrompt: editPrompt,
-          })
-          setDetailAsset((previous) => previous ? {
-            ...previous,
-            views: previous.views?.map((view) =>
-              view.id === currentView.id ? { ...view, imagePrompt: editPrompt } : view
-            ),
-          } : null)
-        } else {
-          const char = detailAsset.raw as Character
-          await fetch(`/api/dramas/${selectedDramaId}/characters`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...char, imagePrompt: editPrompt }),
-          })
-          setDetailAsset((previous) => previous ? {
-            ...previous,
-            imagePrompt: editPrompt,
-          } : null)
-        }
+        await api.characters.update(selectedDramaId, detailAsset.id, {
+          imagePrompt: editPrompt,
+        })
+        setDetailAsset((previous) => previous ? {
+          ...previous,
+          imagePrompt: editPrompt,
+        } : null)
       } else if (detailAsset.type === 'scene') {
         // Scene updates through scene images API or patch
       } else if (detailAsset.type === 'prop') {
@@ -1056,6 +1192,7 @@ export function AssetWorkbench() {
                       onOpen={handleOpenDetail}
                       onGenerate={handleGenerateSingle}
                       onDelete={handleDeleteAsset}
+                      generating={generatingAssetId === asset.id}
                     />
                   ))}
                 </div>
@@ -1068,6 +1205,7 @@ export function AssetWorkbench() {
                       onOpen={handleOpenDetail}
                       onGenerate={handleGenerateSingle}
                       onDelete={handleDeleteAsset}
+                      generating={generatingAssetId === asset.id}
                     />
                   ))}
                 </div>
@@ -1143,7 +1281,6 @@ export function AssetWorkbench() {
                         }`}
                         onClick={() => {
                           setActiveView(v.label)
-                          setEditPrompt(v.imagePrompt || detailAsset.imagePrompt || '')
                           setIsEditing(false)
                         }}
                       >
@@ -1207,10 +1344,12 @@ export function AssetWorkbench() {
                   </div>
                 )}
 
-                {/* Image Prompt (editable) */}
+                {/* Asset-level prompt (editable) */}
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <div className="text-xs font-medium text-muted-foreground">图片提示词</div>
+                    <div className="text-xs font-medium text-muted-foreground">
+                      {detailAsset.type === 'character' ? '角色提示词' : '图片提示词'}
+                    </div>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -1225,16 +1364,51 @@ export function AssetWorkbench() {
                       value={editPrompt}
                       onChange={(e) => setEditPrompt(e.target.value)}
                       className="min-h-[100px] text-xs font-mono"
-                      placeholder="输入图片提示词..."
+                      placeholder={detailAsset.type === 'character' ? '输入角色提示词...' : '输入图片提示词...'}
                     />
                   ) : (
                     <p className="text-xs text-muted-foreground bg-muted/30 rounded-md p-2 max-h-32 overflow-y-auto">
-                      {detailAsset.type === 'character' && activeView
-                        ? detailAsset.views?.find((view) => view.label === activeView)?.imagePrompt || '暂无提示词'
-                        : detailAsset.imagePrompt || '暂无提示词'}
+                      {detailAsset.imagePrompt || '暂无提示词'}
                     </p>
                   )}
                 </div>
+
+                {detailAsset.type === 'character' && activeView && (
+                  <div>
+                    <div className="text-xs font-medium text-muted-foreground mb-1">
+                      「{activeView}」视图生成提示词
+                    </div>
+                    <p className="text-xs text-muted-foreground bg-muted/30 rounded-md p-2 max-h-32 overflow-y-auto">
+                      {detailAsset.views?.find((view) => view.label === activeView)?.imagePrompt || '暂无提示词'}
+                    </p>
+                  </div>
+                )}
+
+                {characterGenerationProgress?.assetId === detailAsset.id && (
+                  <div className="space-y-2 rounded-md border border-primary/20 bg-primary/5 p-3">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="flex items-center gap-1.5">
+                        <Loader2 className="size-3 animate-spin" />
+                        正在生成 {characterGenerationProgress.current}/{characterGenerationProgress.total}：
+                        {characterGenerationProgress.label}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {Math.round(
+                          ((characterGenerationProgress.current - 1) /
+                            characterGenerationProgress.total) *
+                            100
+                        )}%
+                      </span>
+                    </div>
+                    <Progress
+                      value={
+                        ((characterGenerationProgress.current - 1) /
+                          characterGenerationProgress.total) *
+                        100
+                      }
+                    />
+                  </div>
+                )}
               </div>
               <DialogFooter className="gap-2">
                 {detailAsset.type === 'character' && activeView && (
@@ -1243,9 +1417,14 @@ export function AssetWorkbench() {
                     size="sm"
                     className="text-xs gap-1"
                     onClick={handleRegenerateView}
+                    disabled={regeneratingView || generatingAssetId === detailAsset.id}
                   >
-                    <RefreshCw className="size-3" />
-                    重新生成「{activeView}」
+                    {regeneratingView ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      <RefreshCw className="size-3" />
+                    )}
+                    {regeneratingView ? `正在生成「${activeView}」` : `重新生成「${activeView}」`}
                   </Button>
                 )}
                 <Button
@@ -1253,9 +1432,16 @@ export function AssetWorkbench() {
                   size="sm"
                   className="text-xs gap-1"
                   onClick={() => handleGenerateSingle(detailAsset)}
+                  disabled={generatingAssetId === detailAsset.id || regeneratingView}
                 >
-                  <RefreshCw className="size-3" />
-                  生成图片
+                  {generatingAssetId === detailAsset.id ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <RefreshCw className="size-3" />
+                  )}
+                  {characterGenerationProgress?.assetId === detailAsset.id
+                    ? `生成中 ${characterGenerationProgress.current}/${characterGenerationProgress.total}`
+                    : '生成图片'}
                 </Button>
                 {isEditing && (
                   <Button
@@ -1365,11 +1551,13 @@ function AssetCard({
   onOpen,
   onGenerate,
   onDelete,
+  generating,
 }: {
   asset: UnifiedAsset
   onOpen: (a: UnifiedAsset) => void
   onGenerate: (a: UnifiedAsset) => void
   onDelete: (a: UnifiedAsset) => void
+  generating: boolean
 }) {
   const colors = TYPE_COLORS[asset.type]
   const Icon = colors.icon
@@ -1440,8 +1628,9 @@ function AssetCard({
             className="size-6 p-0"
             onClick={(e) => { e.stopPropagation(); onGenerate(asset) }}
             title="生成图片"
+            disabled={generating}
           >
-            <ImageIcon className="size-3" />
+            {generating ? <Loader2 className="size-3 animate-spin" /> : <ImageIcon className="size-3" />}
           </Button>
           <Button
             variant="ghost"
@@ -1474,11 +1663,13 @@ function AssetListItem({
   onOpen,
   onGenerate,
   onDelete,
+  generating,
 }: {
   asset: UnifiedAsset
   onOpen: (a: UnifiedAsset) => void
   onGenerate: (a: UnifiedAsset) => void
   onDelete: (a: UnifiedAsset) => void
+  generating: boolean
 }) {
   const colors = TYPE_COLORS[asset.type]
   const Icon = colors.icon
@@ -1523,8 +1714,9 @@ function AssetListItem({
           className="size-7 p-0"
           onClick={(e) => { e.stopPropagation(); onGenerate(asset) }}
           title="生成图片"
+          disabled={generating}
         >
-          <ImageIcon className="size-3.5" />
+          {generating ? <Loader2 className="size-3.5 animate-spin" /> : <ImageIcon className="size-3.5" />}
         </Button>
         <Button
           variant="ghost"
