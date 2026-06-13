@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { aiClient } from '@/lib/ai-config'
+import { aiClient, getActiveProviderForUser } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
 import { saveMediaFile } from '@/lib/file-storage'
+import {
+  buildSceneContentPrompt,
+  collectSceneGenerationContext,
+  isPublicReferenceUrl,
+} from '@/lib/scene-generation-context'
 
 // POST /api/ai/generate-scene-image - AI Generate Scene Image
 // Generates an image from a scene's prompt and saves it to the scene record
@@ -35,7 +40,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Build prompt from scene info
-    const scenePrompt = scene.prompt || [
+    const baseScenePrompt = scene.prompt || [
       'Cinematic establishing shot,',
       style ? `${style} style,` : '',
       scene.location,
@@ -43,6 +48,8 @@ export async function POST(request: NextRequest) {
       scene.description,
       'professional cinematography, high quality, film still',
     ].filter(Boolean).join(' ')
+    const contentContext = await collectSceneGenerationContext(scene)
+    const scenePrompt = buildSceneContentPrompt(baseScenePrompt, contentContext)
 
     if (!scenePrompt.trim()) {
       return NextResponse.json(
@@ -51,15 +58,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const negativePrompt = 'blurry, low quality, amateur, cartoon, anime, watermark, text overlay, people, characters'
+    const negativePrompt =
+      'blurry, low quality, amateur, watermark, text overlay, duplicate person, extra limbs, malformed hands'
+    const provider = await getActiveProviderForUser('image', auth.userId)
+    const collectedReferences = [
+      ...contentContext.characterReferenceImages,
+      ...contentContext.propReferenceImages,
+      ...(referenceImages || []),
+    ]
+    const providerReferences = provider?.provider === 'minimax'
+      ? contentContext.characterReferenceImages
+          .filter((url) => isPublicReferenceUrl(url, request.nextUrl.origin))
+          .map((url) => new URL(url, request.nextUrl.origin).toString())
+      : collectedReferences
 
     // Generate scene image with optional reference images
     let base64Image: string
     try {
       base64Image = await aiClient.generateImage(scenePrompt, negativePrompt, {
-        width: 1344,
-        height: 768,
-        referenceImages,
+        width: 1280,
+        height: 720,
+        referenceImages: Array.from(new Set(providerReferences)).slice(0, 4),
       })
     } catch (error: unknown) {
       // Handle async task — return taskId for client-side polling
@@ -118,6 +137,10 @@ export async function POST(request: NextRequest) {
       scene: updatedScene,
       imageUrl,
       sceneImage,
+      references: {
+        characters: contentContext.characterNames,
+        props: contentContext.propNames,
+      },
     })
   } catch (error) {
     console.error('Failed to generate scene image:', error)

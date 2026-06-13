@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { aiClient } from '@/lib/ai-config'
 import { saveMediaFile } from '@/lib/file-storage'
+import {
+  buildSceneContentPrompt,
+  collectSceneGenerationContext,
+} from '@/lib/scene-generation-context'
 // GET /api/scenes/[id]/images - List all images for a scene
 export async function GET(
   _request: NextRequest,
@@ -61,7 +65,7 @@ export async function POST(
 
     if (generateImage) {
       // Build scene prompt
-      let scenePrompt = scene.prompt || finalDescription || [
+      const baseScenePrompt = scene.prompt || finalDescription || [
         'Cinematic establishing shot,',
         style ? `${style} style,` : '',
         scene.location,
@@ -69,32 +73,20 @@ export async function POST(
         scene.description,
         'professional cinematography, high quality, film still',
       ].filter(Boolean).join(' ')
-
-      // Add character appearance info to scene prompt for consistency
-      if (scene.dramaId) {
-        const characters = await db.character.findMany({
-          where: { dramaId: scene.dramaId },
-          select: { name: true, appearance: true, imageUrl: true },
-        })
-        const relevantChars = characters.filter(c =>
-          c.appearance && scenePrompt.toLowerCase().includes(c.name.toLowerCase())
-        )
-        if (relevantChars.length > 0) {
-          const charDesc = relevantChars
-            .map(c => `${c.name}: ${c.appearance}`)
-            .join('; ')
-          scenePrompt += `, Characters present: [${charDesc}], they MUST look exactly as described`
-        }
-      }
+      const contentContext = await collectSceneGenerationContext(scene)
+      const scenePrompt = buildSceneContentPrompt(baseScenePrompt, contentContext)
 
       const negativePrompt =
         'blurry, low quality, amateur, cartoon, anime, watermark, text overlay'
 
-      // Note: subject_reference requires public URLs (works on Vercel only).
-      // Locally, we skip reference images and rely on prompt+character descriptions.
       const base64Image = await aiClient.generateImage(scenePrompt, negativePrompt, {
-        width: 1344,
-        height: 768,
+        width: 1280,
+        height: 720,
+        referenceImages: Array.from(new Set([
+          ...contentContext.characterReferenceImages,
+          ...contentContext.propReferenceImages,
+          ...(referenceImages || []),
+        ])).slice(0, 4),
       })
 
       // Save to file storage instead of base64 data URL
