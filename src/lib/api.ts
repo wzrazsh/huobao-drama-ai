@@ -473,7 +473,7 @@ export const api = {
     get: (characterId: string, appearanceId: string) =>
       request<any>(`/api/characters/${characterId}/appearances/${appearanceId}`),
 
-    update: (characterId: string, appearanceId: string, data: { label?: string; selectedIndex?: number; imageUrl?: string }) =>
+    update: (characterId: string, appearanceId: string, data: { label?: string; selectedIndex?: number; imageUrl?: string; imagePrompt?: string; description?: string }) =>
       request<any>(`/api/characters/${characterId}/appearances/${appearanceId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

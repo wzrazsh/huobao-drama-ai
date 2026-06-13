@@ -84,7 +84,7 @@ interface UnifiedAsset {
   createdAt: string
   // type-specific extra data
   raw: Character | Scene | Prop
-  views?: Array<{ label: string; imageUrl: string }>
+  views?: Array<{ id: string; label: string; imageUrl: string; imagePrompt: string | null }>
 }
 
 interface BatchProgress {
@@ -208,7 +208,12 @@ export function AssetWorkbench() {
       const appearances = (c as any).appearances || []
       const views = appearances
         .filter((a: any) => a.imageUrl)
-        .map((a: any) => ({ label: a.label, imageUrl: a.imageUrl }))
+        .map((a: any) => ({
+          id: a.id,
+          label: a.label,
+          imageUrl: a.imageUrl,
+          imagePrompt: a.imagePrompt || null,
+        }))
 
       assets.push({
         id: c.id,
@@ -446,7 +451,12 @@ export function AssetWorkbench() {
         const appearances = (freshChar as any).appearances || []
         const updatedViews = appearances
           .filter((a: any) => a.imageUrl)
-          .map((a: any) => ({ label: a.label, imageUrl: a.imageUrl }))
+          .map((a: any) => ({
+            id: a.id,
+            label: a.label,
+            imageUrl: a.imageUrl,
+            imagePrompt: a.imagePrompt || null,
+          }))
         setDetailAsset(prev => prev ? { ...prev, views: updatedViews } : null)
       }
     } catch (err: any) {
@@ -518,7 +528,9 @@ export function AssetWorkbench() {
     setIsEditing(false)
     // Set initial view tab for characters
     if (asset.type === 'character' && asset.views && asset.views.length > 0) {
-      setActiveView(asset.views[0].label)
+      const initialView = asset.views[0]
+      setActiveView(initialView.label)
+      setEditPrompt(initialView.imagePrompt || asset.imagePrompt || '')
     } else {
       setActiveView('')
     }
@@ -528,12 +540,31 @@ export function AssetWorkbench() {
     if (!detailAsset || !selectedDramaId) return
     try {
       if (detailAsset.type === 'character') {
-        const char = detailAsset.raw as Character
-        await fetch(`/api/dramas/${selectedDramaId}/characters`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...char, imagePrompt: editPrompt }),
-        })
+        const currentView = activeView
+          ? detailAsset.views?.find((view) => view.label === activeView)
+          : undefined
+        if (currentView) {
+          await api.appearances.update(detailAsset.id, currentView.id, {
+            imagePrompt: editPrompt,
+          })
+          setDetailAsset((previous) => previous ? {
+            ...previous,
+            views: previous.views?.map((view) =>
+              view.id === currentView.id ? { ...view, imagePrompt: editPrompt } : view
+            ),
+          } : null)
+        } else {
+          const char = detailAsset.raw as Character
+          await fetch(`/api/dramas/${selectedDramaId}/characters`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...char, imagePrompt: editPrompt }),
+          })
+          setDetailAsset((previous) => previous ? {
+            ...previous,
+            imagePrompt: editPrompt,
+          } : null)
+        }
       } else if (detailAsset.type === 'scene') {
         // Scene updates through scene images API or patch
       } else if (detailAsset.type === 'prop') {
@@ -1110,7 +1141,11 @@ export function AssetWorkbench() {
                             ? 'bg-primary text-primary-foreground'
                             : 'bg-muted hover:bg-muted/80'
                         }`}
-                        onClick={() => setActiveView(v.label)}
+                        onClick={() => {
+                          setActiveView(v.label)
+                          setEditPrompt(v.imagePrompt || detailAsset.imagePrompt || '')
+                          setIsEditing(false)
+                        }}
                       >
                         {v.label}
                       </button>
@@ -1194,7 +1229,9 @@ export function AssetWorkbench() {
                     />
                   ) : (
                     <p className="text-xs text-muted-foreground bg-muted/30 rounded-md p-2 max-h-32 overflow-y-auto">
-                      {detailAsset.imagePrompt || '暂无提示词'}
+                      {detailAsset.type === 'character' && activeView
+                        ? detailAsset.views?.find((view) => view.label === activeView)?.imagePrompt || '暂无提示词'
+                        : detailAsset.imagePrompt || '暂无提示词'}
                     </p>
                   )}
                 </div>

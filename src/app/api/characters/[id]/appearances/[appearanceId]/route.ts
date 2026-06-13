@@ -44,16 +44,24 @@ export async function PATCH(
     }
 
     const body = await request.json()
-    const { label, selectedIndex, imageUrl } = body as {
+    const { label, selectedIndex, imageUrl, imagePrompt, description } = body as {
       label?: string
       selectedIndex?: number
       imageUrl?: string
+      imagePrompt?: string
+      description?: string
     }
 
     const updateData: Record<string, unknown> = {}
 
     if (label !== undefined) {
       updateData.label = label
+    }
+    if (imagePrompt !== undefined) {
+      updateData.imagePrompt = imagePrompt
+    }
+    if (description !== undefined) {
+      updateData.description = description
     }
 
     if (selectedIndex !== undefined) {
