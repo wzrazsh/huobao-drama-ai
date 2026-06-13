@@ -1,0 +1,4 @@
+[mcp_servers.huobao]
+command = "npm"
+args = ["run", "--silent", "mcp:huobao"]
+env = { HUOBAO_MCP_USER_EMAIL = "admin@huobao.com", HUOBAO_APP_URL = "http://localhost:3000" }

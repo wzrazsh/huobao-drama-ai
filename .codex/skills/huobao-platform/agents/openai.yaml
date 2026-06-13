@@ -1,0 +1,4 @@
+interface:
+  display_name: "火宝短剧平台"
+  short_description: "通过本地 MCP 查询项目并执行短剧生成工作流"
+  default_prompt: "Use $huobao-platform to inspect a drama project and carry out the requested generation workflow."

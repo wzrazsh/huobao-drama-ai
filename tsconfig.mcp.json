@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "scripts/mcp/**/*.ts",
+    "src/lib/platform/**/*.ts",
+    "src/app/api/ai/generate-image/route.ts",
+    "src/app/api/ai/poll-status/route.ts",
+    "src/app/api/ai/rewrite-script/route.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "tmp_merge",
+    "tmp_frames"
+  ]
+}
