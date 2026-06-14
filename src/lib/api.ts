@@ -819,12 +819,27 @@ export const api = {
       })
     },
 
-    generateTts: (storyboardId: string, text?: string, voiceId?: string) =>
-      request<{ storyboard: Storyboard }>('/api/ai/generate-tts', {
+    generateTts: (
+      storyboardId: string,
+      text?: string,
+      voiceId?: string,
+      opts?: { segments?: Array<{ speaker: string; text: string; voiceId?: string; voiceName?: string }> }
+    ) => {
+      const body: Record<string, unknown> = { storyboardId, text, voiceId }
+      if (opts?.segments) {
+        body.segments = opts.segments
+      }
+      return request<{
+        storyboard: Storyboard
+        segments?: Array<Record<string, unknown>>
+        partial?: boolean
+        failedSegments?: number[]
+      }>('/api/ai/generate-tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ storyboardId, text, voiceId }),
-      }),
+        body: JSON.stringify(body),
+      })
+    },
 
     // List available voices from TTS providers
     listVoices: (provider?: string, language?: string) => {
