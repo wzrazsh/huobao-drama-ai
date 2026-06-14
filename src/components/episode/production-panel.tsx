@@ -333,14 +333,18 @@ export function ProductionPanel({
                               <span className={`inline-flex items-center gap-0.5 ${isComposed ? 'text-emerald-500 font-medium' : 'text-muted-foreground/40'}`}>
                                 <Layers className="size-2.5" /> 合成
                               </span>
-                            <div className="text-[10px] text-muted-foreground italic bg-muted/30 rounded px-2 py-1 mb-2 space-y-0.5">
-                              {getDialogueDisplay(sb).map((d, i) => (
-                                <div key={i}>
-                                  {d.speaker && <span className="font-medium not-italic text-foreground/80">{d.speaker}：</span>}
-                                  {d.text}
-                                </div>
-                              ))}
-                          </div>
+                            </div>
+                            {/* Subtitle preview — multi-segment aware */}
+                            {sb.dialogue && (
+                              <div className="text-[10px] text-muted-foreground italic bg-muted/30 rounded px-2 py-1 mb-2 space-y-0.5">
+                                {getDialogueDisplay(sb).map((d, i) => (
+                                  <div key={i}>
+                                    {d.speaker && <span className="font-medium not-italic text-foreground/80">{d.speaker}：</span>}
+                                    {d.text}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
 
                           {/* Per-shot actions */}
                           <div className="flex items-center gap-1 flex-shrink-0 flex-wrap">

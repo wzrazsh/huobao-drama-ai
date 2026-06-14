@@ -327,6 +327,7 @@ export function ComposePanel({
                             <span className={`inline-flex items-center gap-0.5 ${hasTts ? 'text-emerald-500 font-medium' : sb.dialogue ? 'text-amber-500' : 'text-muted-foreground/40'}`}>
                               <Mic className="size-2.5" /> 配音
                             </span>
+                          </div>
                           {/* Subtitle preview — multi-segment aware */}
                           {sb.dialogue && (
                             <div className="text-[10px] text-muted-foreground italic bg-muted/30 rounded px-2 py-1 mb-2 space-y-0.5">

@@ -395,31 +395,39 @@ export async function concatAudioSegments(
   const out = outputPath || path.join(PATHS.audio, `concat_${Date.now()}.mp3`)
   await fs.mkdir(path.dirname(out), { recursive: true })
 
-  // Build -i args
-  const inputArgs: string[] = []
-  for (const p of segmentPaths) {
-    inputArgs.push('-i', p)
+  // Use ffmpeg's concat demuxer (avoids needing libmp3lame to re-encode).
+  // The demuxer requires all inputs to share codec/params — our TTS
+  // segments are all mp3 32kHz mono from MiniMax, so stream copy works.
+  // We materialise a tiny list file pointing at each input.
+  const listPath = path.join(PATHS.audio, `concat_list_${Date.now()}.txt`)
+  // Forward slashes — Windows ffmpeg handles them, and it sidesteps any
+  // backslash-escape pitfalls in the list file.
+  const toFfmpegPath = (p: string) => p.replace(/\\/g, '/')
+  const listBody = segmentPaths
+    .map((p) => `file '${toFfmpegPath(p)}'`)
+    .join('\n') + '\n'
+  await fs.writeFile(listPath, listBody, 'utf8')
+
+  try {
+    const args = [
+      '-y',
+      '-f', 'concat',
+      '-safe', '0',
+      '-i', listPath,
+      '-c', 'copy',
+      out,
+    ]
+    const result = await runFFmpeg(args)
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `ffmpeg concat failed (exit ${result.exitCode}): ${result.stderr.slice(0, 500)}`
+      )
+    }
+    return out
+  } finally {
+    // Clean up the list file
+    await fs.unlink(listPath).catch(() => {})
   }
-
-  // Build filter: [0:a][1:a]...[N-1:a]concat=n=N:v=0:a=1[out]
-  const inputLabels = segmentPaths.map((_, i) => `[${i}:a]`).join('')
-  const filter = `${inputLabels}concat=n=${segmentPaths.length}:v=0:a=1[out]`
-
-  const args = [
-    '-y',
-    ...inputArgs,
-    '-filter_complex', filter,
-    '-map', '[out]',
-    '-c:a', 'libmp3lame',
-    '-q:a', '2',
-    out,
-  ]
-
-  const result = await runFFmpeg(args)
-  if (result.code !== 0) {
-    throw new Error(`ffmpeg concat failed (code ${result.code}): ${result.stderr.slice(0, 500)}`)
-  }
-  return out
 }
 
 // ── Video Duration ─────────────────────────────────────────────
