@@ -15,7 +15,7 @@ export async function PATCH(
       'shotNumber', 'title', 'shotType', 'cameraAngle', 'cameraMovement',
       'action', 'description', 'dialogue', 'dialogueChar', 'duration', 'imagePrompt',
       'videoPrompt', 'atmosphere', 'firstFrameUrl', 'lastFrameUrl', 'videoUrl',
-      'ttsAudioUrl', 'composedUrl', 'bgmPrompt', 'soundEffect', 'referenceImages', 'status',
+      'ttsAudioUrl', 'ttsSegments', 'composedUrl', 'bgmPrompt', 'soundEffect', 'referenceImages', 'status',
     ];
     const data: Record<string, unknown> = {};
     for (const field of allowedFields) {
