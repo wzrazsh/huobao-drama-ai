@@ -140,6 +140,7 @@ export interface Storyboard {
   referenceImages: string | null
   videoUrl: string | null
   ttsAudioUrl: string | null
+  ttsSegments: string | null
   composedUrl: string | null
   status: string
   createdAt: string

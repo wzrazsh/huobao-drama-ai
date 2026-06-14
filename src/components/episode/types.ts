@@ -1,6 +1,20 @@
 import type { EpisodeDetail, Character, Scene, Prop, Storyboard } from '@/lib/store'
 import type { UserPermissions } from '@/hooks/use-permissions'
 
+// ── Multi-segment TTS dialogue segment shape ───────────────────
+// Mirrors Storyboard.ttsSegments JSON in the DB.
+export interface DialogueSegment {
+  speaker: string
+  text: string
+  voiceId: string
+  voiceName?: string
+  audioUrl?: string
+  startMs?: number
+  endMs?: number
+  status: 'pending' | 'completed' | 'failed'
+  error?: string
+}
+
 // ── Stage types (3-stage pipeline) ─────────────────────────────
 
 export type StageKey = 'script' | 'production' | 'export'

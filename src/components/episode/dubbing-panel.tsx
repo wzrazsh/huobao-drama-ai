@@ -16,7 +16,27 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Progress } from '@/components/ui/progress'
 import { panelVariants } from './helpers'
-import type { DubbingPanelProps } from './types'
+import type { DubbingPanelProps, DialogueSegment } from './types'
+import type { Storyboard } from '@/lib/store'
+
+// ── Helpers ─────────────────────────────────────────────────────
+
+/**
+ * Parse the ttsSegments JSON field on a Storyboard.
+ * Returns null when the field is empty or malformed.
+ */
+function parseTtsSegments(sb: Storyboard): DialogueSegment[] | null {
+  if (!sb.ttsSegments) return null
+  try {
+    const parsed = JSON.parse(sb.ttsSegments)
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed as DialogueSegment[]
+    }
+    return null
+  } catch {
+    return null
+  }
+}
 
 export function DubbingPanel({
   storyboards,
@@ -142,6 +162,10 @@ export function DubbingPanel({
               const isUploading = uploadingField === `tts-${sb.id}`
               const hasTts = !!sb.ttsAudioUrl
               const charInfo = getCharVoice(sb.dialogueChar)
+              const segs = parseTtsSegments(sb)
+              const isMulti = segs !== null
+              const completedSegs = segs ? segs.filter((s) => s.status === 'completed').length : 0
+              const totalSegs = segs ? segs.length : 0
 
               return (
                 <Card key={sb.id} className={`border-border/50 py-0 gap-0 ${hasTts ? 'ring-1 ring-emerald-500/20' : ''}`}>
@@ -157,7 +181,7 @@ export function DubbingPanel({
                       {/* Info */}
                       <div className="flex-1 min-w-0">
                         {/* Dialogue character + voice badge */}
-                        <div className="flex items-center gap-2 mb-1.5">
+                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                           {sb.dialogueChar && (
                             <>
                               <div className="flex items-center gap-1">
@@ -181,27 +205,101 @@ export function DubbingPanel({
                               )}
                             </>
                           )}
-                          {hasTts && (
+                          {isMulti && (
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                              分 {totalSegs} 段
+                              {completedSegs > 0 && (
+                                <span className="ml-1 text-emerald-600">{completedSegs}/{totalSegs}</span>
+                              )}
+                            </Badge>
+                          )}
+                          {hasTts && !isMulti && (
                             <Badge className="status-completed text-[9px] px-1.5 py-0">已配音</Badge>
                           )}
                         </div>
 
-                        {/* Dialogue text */}
-                        <div className="text-xs text-muted-foreground bg-muted/30 rounded px-2 py-1.5 mb-2 line-clamp-2">
-                          {sb.dialogue}
-                        </div>
-
-                        {/* Audio player */}
-                        {hasTts && (
-                          <div className="flex items-center gap-2 mb-2">
-                            <Music className="size-3 text-primary/60 flex-shrink-0" />
-                            <audio
-                              src={sb.ttsAudioUrl}
-                              controls
-                              className="h-6 flex-1 [&::-webkit-media-controls-panel]:bg-muted/50"
-                              style={{ minWidth: 0 }}
-                            />
+                        {/* Multi-segment sub-rows */}
+                        {isMulti ? (
+                          <div className="space-y-1.5 mb-2">
+                            {segs!.map((seg, i) => (
+                              <div
+                                key={i}
+                                className="border border-border/40 rounded-md p-2 bg-muted/20"
+                              >
+                                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                                  <span className="text-xs font-medium">{seg.speaker}</span>
+                                  {seg.voiceId && (
+                                    <Badge variant="outline" className="text-[9px] px-1.5 py-0 text-emerald-600 border-emerald-200">
+                                      <Volume2 className="size-2.5 mr-0.5" />
+                                      {seg.voiceId}
+                                    </Badge>
+                                  )}
+                                  <span
+                                    className={`text-[9px] px-1.5 py-0 rounded ${
+                                      seg.status === 'completed'
+                                        ? 'bg-emerald-500/15 text-emerald-700'
+                                        : seg.status === 'failed'
+                                        ? 'bg-rose-500/15 text-rose-700'
+                                        : 'bg-muted text-muted-foreground'
+                                    }`}
+                                  >
+                                    {seg.status === 'completed' ? '已完成' : seg.status === 'failed' ? '失败' : '待生成'}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-muted-foreground mb-1.5">
+                                  {seg.text}
+                                </div>
+                                {seg.audioUrl ? (
+                                  <div className="flex items-center gap-2">
+                                    <Music className="size-3 text-primary/60 flex-shrink-0" />
+                                    <audio
+                                      src={seg.audioUrl}
+                                      controls
+                                      className="h-5 flex-1 [&::-webkit-media-controls-panel]:bg-muted/50"
+                                      style={{ minWidth: 0 }}
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="text-[10px] text-muted-foreground italic">
+                                    {seg.error || '尚未生成'}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                            {/* Merged full-conversation player */}
+                            {hasTts && (
+                              <div className="flex items-center gap-2 mt-2 pt-2 border-t border-border/40">
+                                <Music className="size-3 text-primary/60 flex-shrink-0" />
+                                <span className="text-[10px] text-muted-foreground whitespace-nowrap">合并音频</span>
+                                <audio
+                                  src={sb.ttsAudioUrl!}
+                                  controls
+                                  className="h-5 flex-1 [&::-webkit-media-controls-panel]:bg-muted/50"
+                                  style={{ minWidth: 0 }}
+                                />
+                              </div>
+                            )}
                           </div>
+                        ) : (
+                          <>
+                            {/* Single-segment dialogue text */}
+                            <div className="text-xs text-muted-foreground bg-muted/30 rounded px-2 py-1.5 mb-2 line-clamp-2">
+                              {sb.dialogue}
+                            </div>
+
+                            {/* Audio player */}
+                            {hasTts && (
+                              <div className="flex items-center gap-2 mb-2">
+                                <Music className="size-3 text-primary/60 flex-shrink-0" />
+                                <audio
+                                  src={sb.ttsAudioUrl}
+                                  controls
+                                  className="h-6 flex-1 [&::-webkit-media-controls-panel]:bg-muted/50"
+                                  style={{ minWidth: 0 }}
+                                />
+                              </div>
+                            )}
+                          </>
                         )}
 
                         {/* Action buttons */}
@@ -214,32 +312,36 @@ export function DubbingPanel({
                             disabled={isGenerating || aiLoading}
                           >
                             {isGenerating ? <Loader2 className="size-3 animate-spin" /> : <Mic className="size-3" />}
-                            AI生成配音
+                            {isMulti ? '生成全部段' : 'AI生成配音'}
                           </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 text-[10px] px-2 text-muted-foreground hover:text-foreground"
-                            disabled={isUploading}
-                            onClick={() => {
-                              const input = document.getElementById(`upload-tts-${sb.id}`) as HTMLInputElement
-                              input?.click()
-                            }}
-                          >
-                            {isUploading ? <Loader2 className="size-3 animate-spin" /> : <Upload className="size-3" />}
-                            上传音频
-                          </Button>
-                          <input
-                            id={`upload-tts-${sb.id}`}
-                            type="file"
-                            accept="audio/*"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0]
-                              if (file) handleUpload(file, { storyboardId: sb.id, fieldType: 'ttsAudioUrl' }, `tts-${sb.id}`)
-                              e.target.value = ''
-                            }}
-                          />
+                          {!isMulti && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-[10px] px-2 text-muted-foreground hover:text-foreground"
+                                disabled={isUploading}
+                                onClick={() => {
+                                  const input = document.getElementById(`upload-tts-${sb.id}`) as HTMLInputElement
+                                  input?.click()
+                                }}
+                              >
+                                {isUploading ? <Loader2 className="size-3 animate-spin" /> : <Upload className="size-3" />}
+                                上传音频
+                              </Button>
+                              <input
+                                id={`upload-tts-${sb.id}`}
+                                type="file"
+                                accept="audio/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0]
+                                  if (file) handleUpload(file, { storyboardId: sb.id, fieldType: 'ttsAudioUrl' }, `tts-${sb.id}`)
+                                  e.target.value = ''
+                                }}
+                              />
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
