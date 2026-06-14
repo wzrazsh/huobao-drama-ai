@@ -463,6 +463,15 @@ export const api = {
       fetch(`/api/characters/${characterId}`, { method: 'DELETE' }).then(r => {
         if (!r.ok) throw new Error(`Delete character failed: ${r.status}`)
       }),
+
+    syncToCos: (characterId: string) =>
+      request<{ success: boolean; result: { characterId: string; cosImageUrl: string | null; appearances: Array<{ appearanceId: string; appearanceIndex: number; cosImageUrl: string | null }> }; message: string }>(
+        `/api/characters/${characterId}/sync-to-cos`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        }
+      ),
   },
 
   // ---- Character Appearances ----

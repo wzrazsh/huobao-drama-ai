@@ -120,6 +120,7 @@ model Character {
   voiceId     String?
   imagePrompt String?
   imageUrl    String?
+  cosImageUrl String? // Public Tencent COS URL for MiniMax subject_reference
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -202,6 +203,7 @@ model CharacterAppearance {
   description      String   @default("") // Text description extracted by AI Vision
   imagePrompt      String   @default("") // The prompt used for generation
   imageUrl         String? // Currently selected image (data URL or path)
+  cosImageUrl      String? // Public Tencent COS URL for MiniMax subject_reference
   imageUrls        String   @default("[]") // JSON array of all generated images
   selectedIndex    Int      @default(0) // Which image in imageUrls is selected
   previousImageUrl String? // For undo/rollback

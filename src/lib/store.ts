@@ -89,6 +89,7 @@ export interface Character {
   voiceId: string | null
   imagePrompt: string | null
   imageUrl: string | null
+  cosImageUrl: string | null
   assetId: string | null
   // Consistency fields
   styleLock: boolean
