@@ -182,6 +182,7 @@ model Storyboard {
   lastFrameUrl    String?
   videoUrl        String?
   ttsAudioUrl     String?
+  ttsSegments     String? // JSON: DialogueSegment[] = [{speaker, text, voiceId, voiceName, audioUrl?, startMs?, endMs?, status}]
   composedUrl     String?
   bgmPrompt       String?
   soundEffect     String?
