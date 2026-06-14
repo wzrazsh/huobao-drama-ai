@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore, type Character, type Scene, type Prop, type DramaDetail } from '@/lib/store'
 import { api, type ArtStyleInfo } from '@/lib/api'
@@ -39,31 +39,36 @@ import {
 } from '@/components/ui/select'
 import {
   ArrowLeft,
-  Palette,
-  Loader2,
   Check,
   ChevronLeft,
   ChevronRight,
-  Sparkles,
-  Play,
-  RotateCcw,
-  Search,
+  CloudUpload,
+  Download,
+  Eye,
+  Filter,
+  FolderOpen,
+  ImageIcon,
   LayoutGrid,
   List,
-  Plus,
-  ImageIcon,
-  Pencil,
-  Trash2,
-  Users,
+  Loader2,
+  Mail,
+  Maximize2,
   Mountain,
   Package,
-  Filter,
-  Zap,
-  Download,
-  X,
-  Eye,
+  Palette,
+  Pencil,
+  Play,
+  Plus,
   RefreshCw,
-  FolderOpen,
+  RotateCcw,
+  Search,
+  Sparkles,
+  Trash2,
+  Users,
+  X,
+  Zap,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react'
 
 // ── Types ──────────────────────────────────────────────────
@@ -80,6 +85,7 @@ interface UnifiedAsset {
   description: string
   imagePrompt: string | null
   imageUrl: string | null
+  cosImageUrl: string | null
   episodeIds: string
   createdAt: string
   // type-specific extra data
@@ -100,7 +106,15 @@ interface CharacterGenerationProgress {
   label: string
 }
 
+interface ImagePreview {
+  url: string
+  alt: string
+}
+
 const CHARACTER_VIEW_LABELS = ['面部特写', '全身正面', '全身背面', '全身侧面'] as const
+const MIN_PREVIEW_SCALE = 1
+const MAX_PREVIEW_SCALE = 4
+const PREVIEW_SCALE_STEP = 0.25
 
 // ── Color mapping ──────────────────────────────────────────
 
@@ -154,15 +168,20 @@ export function AssetWorkbench() {
   const [batchProgress, setBatchProgress] = useState<BatchProgress>({ current: 0, total: 0, active: false })
   const [imageSize, setImageSize] = useState<string>('1:1')
   const [generatingAssetId, setGeneratingAssetId] = useState<string | null>(null)
-  const [characterGenerationProgress, setCharacterGenerationProgress] =
-    useState<CharacterGenerationProgress | null>(null)
   const [regeneratingView, setRegeneratingView] = useState(false)
+  const [syncingToCos, setSyncingToCos] = useState(false)
 
+  const [characterGenerationProgress, setCharacterGenerationProgress] = useState<CharacterGenerationProgress | null>(null)
   // Detail dialog state
   const [detailAsset, setDetailAsset] = useState<UnifiedAsset | null>(null)
   const [editPrompt, setEditPrompt] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   const [activeView, setActiveView] = useState<string>('')
+  const [imagePreview, setImagePreview] = useState<ImagePreview | null>(null)
+  const [previewScale, setPreviewScale] = useState(MIN_PREVIEW_SCALE)
+  const [previewPosition, setPreviewPosition] = useState({ x: 0, y: 0 })
+  const [isDraggingPreview, setIsDraggingPreview] = useState(false)
+  const previewDragStart = useRef({ pointerX: 0, pointerY: 0, imageX: 0, imageY: 0 })
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<UnifiedAsset | null>(null)
@@ -214,6 +233,57 @@ export function AssetWorkbench() {
     loadArtStyles()
   }, [loadDrama, loadExtractStatus, loadArtStyles])
 
+  const resetImagePreview = useCallback(() => {
+    setPreviewScale(MIN_PREVIEW_SCALE)
+    setPreviewPosition({ x: 0, y: 0 })
+    setIsDraggingPreview(false)
+  }, [])
+
+  const closeImagePreview = useCallback(() => {
+    setImagePreview(null)
+    resetImagePreview()
+  }, [resetImagePreview])
+
+  const openImagePreview = (url: string, alt: string) => {
+    resetImagePreview()
+    setImagePreview({ url, alt })
+  }
+
+  const updatePreviewScale = (nextScale: number) => {
+    const clampedScale = Math.min(MAX_PREVIEW_SCALE, Math.max(MIN_PREVIEW_SCALE, nextScale))
+    setPreviewScale(clampedScale)
+    if (clampedScale === MIN_PREVIEW_SCALE) {
+      setPreviewPosition({ x: 0, y: 0 })
+    }
+  }
+
+  const handlePreviewPointerDown = (event: React.PointerEvent<HTMLImageElement>) => {
+    if (previewScale === MIN_PREVIEW_SCALE || event.button !== 0) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    previewDragStart.current = {
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      imageX: previewPosition.x,
+      imageY: previewPosition.y,
+    }
+    setIsDraggingPreview(true)
+  }
+
+  const handlePreviewPointerMove = (event: React.PointerEvent<HTMLImageElement>) => {
+    if (!isDraggingPreview) return
+    setPreviewPosition({
+      x: previewDragStart.current.imageX + event.clientX - previewDragStart.current.pointerX,
+      y: previewDragStart.current.imageY + event.clientY - previewDragStart.current.pointerY,
+    })
+  }
+
+  const handlePreviewPointerUp = (event: React.PointerEvent<HTMLImageElement>) => {
+    if (!isDraggingPreview) return
+    event.currentTarget.releasePointerCapture(event.pointerId)
+    setIsDraggingPreview(false)
+  }
+
   // ── Computed: Unified asset list ──
   const allAssets = useMemo<UnifiedAsset[]>(() => {
     if (!drama) return []
@@ -237,6 +307,7 @@ export function AssetWorkbench() {
         description: c.appearance || c.personality || '',
         imagePrompt: c.imagePrompt,
         imageUrl: c.imageUrl,
+        cosImageUrl: c.cosImageUrl,
         episodeIds: c.episodeIds,
         createdAt: c.createdAt,
         raw: c,
@@ -529,12 +600,12 @@ export function AssetWorkbench() {
       if (asset.type === 'character' && refreshedDrama) {
         const freshCharacter = refreshedDrama.characters?.find((character) => character.id === asset.id)
         if (freshCharacter) {
-          const appearances = (freshCharacter as any).appearances || []
           setDetailAsset((previous) => previous && previous.id === asset.id ? {
             ...previous,
             description: freshCharacter.appearance || freshCharacter.personality || '',
             imagePrompt: freshCharacter.imagePrompt,
             imageUrl: freshCharacter.imageUrl,
+            cosImageUrl: freshCharacter.cosImageUrl,
             raw: freshCharacter,
             views: appearances
               .filter((appearance: any) => appearance.imageUrl)
@@ -608,6 +679,7 @@ export function AssetWorkbench() {
         setDetailAsset((previous) => previous ? {
           ...previous,
           imagePrompt: freshCharacter.imagePrompt,
+          cosImageUrl: freshCharacter.cosImageUrl,
           raw: freshCharacter,
         } : null)
         setEditPrompt(freshCharacter.imagePrompt || '')
@@ -711,6 +783,27 @@ export function AssetWorkbench() {
       await loadDrama()
     } catch (err: any) {
       toast({ title: '保存失败', description: err.message, variant: 'destructive' })
+    }
+  }
+
+  const handleSyncToCos = async () => {
+    if (!detailAsset || detailAsset.type !== 'character') return
+    setSyncingToCos(true)
+    try {
+      const response = await api.characters.syncToCos(detailAsset.id)
+      if (response.success && response.result.cosImageUrl) {
+        setDetailAsset((previous) => previous ? {
+          ...previous,
+          cosImageUrl: response.result.cosImageUrl,
+        } : null)
+      }
+      toast({ title: '同步完成', description: response.message })
+      await loadDrama()
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      toast({ title: '同步失败', description: message, variant: 'destructive' })
+    } finally {
+      setSyncingToCos(false)
     }
   }
 
@@ -1295,15 +1388,30 @@ export function AssetWorkbench() {
                     ? detailAsset.views.find(v => v.label === activeView)
                     : null
                   const displayUrl = currentView?.imageUrl || detailAsset.imageUrl
+                  const displayAlt = currentView
+                    ? `${detailAsset.name} - ${currentView.label}`
+                    : detailAsset.name
 
                   return displayUrl ? (
-                    <div className="rounded-lg overflow-hidden border border-border/50 bg-muted/30">
+                    <button
+                      type="button"
+                      className="group relative block w-full cursor-zoom-in overflow-hidden rounded-lg border border-border/50 bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      onClick={() => openImagePreview(displayUrl, displayAlt)}
+                      aria-label={`查看${displayAlt}全图`}
+                      title="查看全图"
+                    >
                       <img
                         src={displayUrl}
-                        alt={detailAsset.name}
-                        className="w-full max-h-64 object-contain"
+                        alt={displayAlt}
+                        className="w-full max-h-64 object-contain transition-[filter] group-hover:brightness-75"
                       />
-                    </div>
+                      <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition-all group-hover:bg-black/20 group-hover:opacity-100 group-focus-visible:bg-black/20 group-focus-visible:opacity-100">
+                        <span className="flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1.5 text-xs font-medium text-white shadow-lg">
+                          <Maximize2 className="size-3.5" />
+                          查看全图
+                        </span>
+                      </span>
+                    </button>
                   ) : (
                     <div className="rounded-lg border border-dashed border-border/50 bg-muted/20 h-40 flex items-center justify-center">
                       <div className="text-center">
@@ -1411,6 +1519,23 @@ export function AssetWorkbench() {
                 )}
               </div>
               <DialogFooter className="gap-2">
+                {detailAsset.type === 'character' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs gap-1"
+                    onClick={handleSyncToCos}
+                    disabled={syncingToCos || !detailAsset.imageUrl || Boolean(detailAsset.cosImageUrl)}
+                    title={detailAsset.cosImageUrl ? '已同步到云端' : '同步角色图片到腾讯云 COS'}
+                  >
+                    {syncingToCos ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      <CloudUpload className="size-3" />
+                    )}
+                    {detailAsset.cosImageUrl ? '已同步' : '同步到云端'}
+                  </Button>
+                )}
                 {detailAsset.type === 'character' && activeView && (
                   <Button
                     variant="outline"
@@ -1458,6 +1583,103 @@ export function AssetWorkbench() {
           )}
         </DialogContent>
       </Dialog>
+
+      {imagePreview && (
+        <Dialog open onOpenChange={(open) => !open && closeImagePreview()}>
+          <DialogContent
+            showCloseButton={false}
+            className="z-[100] !top-0 !right-0 !bottom-0 !left-0 flex h-dvh w-screen !max-w-none !translate-x-0 !translate-y-0 touch-none items-center justify-center overflow-hidden rounded-none border-0 bg-black/95 p-3 shadow-none data-[state=closed]:!animate-none data-[state=open]:!animate-none sm:p-6"
+            aria-label={`${imagePreview.alt}全图预览`}
+            onClick={closeImagePreview}
+            onWheel={(event) => {
+              event.preventDefault()
+              updatePreviewScale(
+                previewScale + (event.deltaY < 0 ? PREVIEW_SCALE_STEP : -PREVIEW_SCALE_STEP)
+              )
+            }}
+          >
+            <DialogTitle className="sr-only">{imagePreview.alt}全图预览</DialogTitle>
+            <div
+              className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full border border-white/15 bg-black/70 p-1 text-white shadow-lg backdrop-blur-sm sm:top-5"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-9 rounded-full text-white hover:bg-white/15 hover:text-white"
+                onClick={() => updatePreviewScale(previewScale - PREVIEW_SCALE_STEP)}
+                disabled={previewScale <= MIN_PREVIEW_SCALE}
+                aria-label="缩小图片"
+                title="缩小"
+              >
+                <ZoomOut className="size-4" />
+              </Button>
+              <button
+                type="button"
+                className="min-w-14 rounded-full px-2 py-1 text-xs tabular-nums hover:bg-white/15"
+                onClick={resetImagePreview}
+                aria-label="恢复适屏"
+                title="恢复适屏"
+              >
+                {Math.round(previewScale * 100)}%
+              </button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-9 rounded-full text-white hover:bg-white/15 hover:text-white"
+                onClick={() => updatePreviewScale(previewScale + PREVIEW_SCALE_STEP)}
+                disabled={previewScale >= MAX_PREVIEW_SCALE}
+                aria-label="放大图片"
+                title="放大"
+              >
+                <ZoomIn className="size-4" />
+              </Button>
+            </div>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute right-3 top-3 z-10 size-10 rounded-full bg-black/60 text-white hover:bg-white/15 hover:text-white sm:right-5 sm:top-5"
+              onClick={(event) => {
+                event.stopPropagation()
+                closeImagePreview()
+              }}
+              aria-label="关闭全图预览"
+              title="关闭"
+            >
+              <X className="size-5" />
+            </Button>
+
+            <img
+              src={imagePreview.url}
+              alt={imagePreview.alt}
+              draggable={false}
+              className={`max-h-[calc(100dvh-1.5rem)] max-w-[calc(100vw-1.5rem)] select-none object-contain sm:max-h-[calc(100dvh-3rem)] sm:max-w-[calc(100vw-3rem)] ${
+                previewScale > MIN_PREVIEW_SCALE
+                  ? isDraggingPreview ? 'cursor-grabbing' : 'cursor-grab'
+                  : 'cursor-zoom-in'
+              }`}
+              style={{
+                transform: `translate3d(${previewPosition.x}px, ${previewPosition.y}px, 0) scale(${previewScale})`,
+                transition: isDraggingPreview ? 'none' : 'transform 150ms ease-out',
+              }}
+              onClick={(event) => {
+                event.stopPropagation()
+                if (previewScale === MIN_PREVIEW_SCALE) {
+                  updatePreviewScale(MIN_PREVIEW_SCALE + PREVIEW_SCALE_STEP)
+                }
+              }}
+              onPointerDown={handlePreviewPointerDown}
+              onPointerMove={handlePreviewPointerMove}
+              onPointerUp={handlePreviewPointerUp}
+              onPointerCancel={handlePreviewPointerUp}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* ── Add Manual Dialog ── */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>

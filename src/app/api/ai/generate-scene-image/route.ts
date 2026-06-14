@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { aiClient, getActiveProviderForUser } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
 import { saveMediaFile } from '@/lib/file-storage'
+import { resolveCharacterReferencesForMiniMax } from '@/lib/cos-storage'
 import {
   buildSceneContentPrompt,
   collectSceneGenerationContext,
@@ -57,20 +58,68 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-
     const negativePrompt =
       'blurry, low quality, amateur, watermark, text overlay, duplicate person, extra limbs, malformed hands'
     const provider = await getActiveProviderForUser('image', auth.userId)
+
+    // Load relevant characters to map reference images to COS URLs for MiniMax.
+    const characters = await db.character.findMany({
+      where: { dramaId: scene.dramaId },
+      include: { appearances: true },
+    })
+    const characterByImageUrl = new Map<string, typeof characters[number]>()
+    for (const character of characters) {
+      if (character.imageUrl) characterByImageUrl.set(character.imageUrl, character)
+      if (character.cosImageUrl) characterByImageUrl.set(character.cosImageUrl, character)
+      for (const appearance of character.appearances || []) {
+        if (appearance.imageUrl) characterByImageUrl.set(appearance.imageUrl, character)
+        if (appearance.cosImageUrl) characterByImageUrl.set(appearance.cosImageUrl, character)
+      }
+    }
+
     const collectedReferences = [
       ...contentContext.characterReferenceImages,
       ...contentContext.propReferenceImages,
       ...(referenceImages || []),
     ]
-    const providerReferences = provider?.provider === 'minimax'
-      ? contentContext.characterReferenceImages
-          .filter((url) => isPublicReferenceUrl(url, request.nextUrl.origin))
-          .map((url) => new URL(url, request.nextUrl.origin).toString())
-      : collectedReferences
+
+    let providerReferences: string[] = collectedReferences
+    if (provider?.provider === 'minimax') {
+      // MiniMax requires public HTTP URLs for subject_reference.
+      // Convert local file-storage URLs to Tencent COS public URLs.
+      const characterRefs = contentContext.characterReferenceImages
+        .map((url) => {
+          const character = characterByImageUrl.get(url)
+          return character
+            ? { id: character.id, imageUrl: character.imageUrl, cosImageUrl: character.cosImageUrl }
+            : { id: 'unknown', imageUrl: url, cosImageUrl: null }
+        })
+        .filter((ref): ref is { id: string; imageUrl: string | null; cosImageUrl: string | null } =>
+          Boolean(ref.imageUrl || ref.cosImageUrl)
+        )
+      const { urls: cosUrls, uploaded } = await resolveCharacterReferencesForMiniMax(characterRefs)
+
+      // Persist newly-uploaded COS URLs back to the character records for future reuse.
+      for (const item of uploaded) {
+        if (item.id === 'unknown') continue
+        const character = characters.find((c) => c.id === item.id)
+        if (!character) continue
+        if (!character.cosImageUrl) {
+          await db.character.update({
+            where: { id: item.id },
+            data: { cosImageUrl: item.url },
+          })
+        }
+      }
+
+      // Keep any already-public prop/character URLs that are not local.
+      const otherPublicUrls = collectedReferences
+        .filter((url) => !contentContext.characterReferenceImages.includes(url))
+        .filter((url) => isPublicReferenceUrl(url, request.nextUrl.origin))
+        .map((url) => new URL(url, request.nextUrl.origin).toString())
+
+      providerReferences = [...cosUrls, ...otherPublicUrls]
+    }
 
     // Generate scene image with optional reference images
     let base64Image: string

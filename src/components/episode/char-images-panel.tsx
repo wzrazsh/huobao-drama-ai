@@ -12,6 +12,7 @@ import {
   Check,
   Sparkles,
   Info,
+  CloudUpload,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -20,16 +21,17 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Progress } from '@/components/ui/progress'
 import { panelVariants } from './helpers'
 import type { CharImagesPanelProps } from './types'
-
 export function CharImagesPanel({
   characters,
   aiLoading,
   generatingCharImg,
+  syncingCharImg,
   batchProgress,
   uploadingField,
   copiedField,
   handleGenerateCharSheet,
   handleGenerateCharImage,
+  handleSyncCharImageToCos,
   handleUpload,
   handleCopy,
 }: CharImagesPanelProps) {
@@ -123,6 +125,7 @@ export function CharImagesPanel({
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
             {characters.map((char) => {
               const isGenerating = generatingCharImg === char.id
+              const isSyncing = syncingCharImg === char.id
               const isUploading = uploadingField === `char-image-${char.id}`
               const copyId = `char-appearance-${char.id}`
 
@@ -202,7 +205,6 @@ export function CharImagesPanel({
                             AI生成设定图
                           </Button>
                           <Button
-                            size="sm"
                             variant="ghost"
                             className="h-7 text-[10px] px-2 text-muted-foreground hover:text-foreground"
                             disabled={isUploading}
@@ -213,6 +215,17 @@ export function CharImagesPanel({
                           >
                             {isUploading ? <Loader2 className="size-3 animate-spin" /> : <Upload className="size-3" />}
                             上传图片
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-[10px] px-2 text-muted-foreground hover:text-foreground"
+                            disabled={isSyncing || !char.imageUrl || Boolean(char.cosImageUrl)}
+                            title={char.cosImageUrl ? '已同步到云端' : '同步角色图片到腾讯云 COS'}
+                            onClick={() => handleSyncCharImageToCos(char.id)}
+                          >
+                            {isSyncing ? <Loader2 className="size-3 animate-spin" /> : <CloudUpload className="size-3" />}
+                            {char.cosImageUrl ? '已同步' : '同步'}
                           </Button>
                           <input
                             id={`upload-char-img-${char.id}`}

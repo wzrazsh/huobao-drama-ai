@@ -78,6 +78,7 @@ export function EpisodeWorkspace() {
   const [storyboards, setStoryboards] = useState<Storyboard[]>([])
   const [saving, setSaving] = useState(false)
   const [generatingCharImg, setGeneratingCharImg] = useState<string | null>(null)
+  const [syncingCharImg, setSyncingCharImg] = useState<string | null>(null)
   const [generatingSceneImg, setGeneratingSceneImg] = useState<string | null>(null)
   const [generatingShotImg, setGeneratingShotImg] = useState<string | null>(null)
   const [generatingVideo, setGeneratingVideo] = useState<string | null>(null)
@@ -825,6 +826,24 @@ export function EpisodeWorkspace() {
       setGeneratingCharImg(null)
     }
   }
+
+  // ── Sync character images to Tencent COS ─────────────────
+
+  const handleSyncCharImageToCos = async (characterId: string) => {
+    setSyncingCharImg(characterId)
+    try {
+      const result = await api.characters.syncToCos(characterId)
+      if (result.success) {
+        toast({ title: '同步完成', description: result.message })
+        await fetchEpisode()
+      }
+    } catch (err) {
+      toast({ title: '同步失败', description: String(err), variant: 'destructive' })
+    } finally {
+      setSyncingCharImg(null)
+    }
+  }
+
 
   // ── AI: Generate shot image ────────────────────────────────
 
@@ -1755,11 +1774,13 @@ export function EpisodeWorkspace() {
                 characters={characters}
                 aiLoading={aiLoading}
                 generatingCharImg={generatingCharImg}
+                syncingCharImg={syncingCharImg}
                 batchProgress={batchProgress}
                 uploadingField={uploadingField}
                 copiedField={copiedField}
                 handleGenerateCharSheet={handleGenerateCharSheet}
                 handleGenerateCharImage={handleGenerateCharImage}
+                handleSyncCharImageToCos={handleSyncCharImageToCos}
                 handleUpload={handleUpload}
                 handleCopy={handleCopy}
               />

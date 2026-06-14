@@ -233,23 +233,13 @@ export interface CharImagesPanelProps {
   characters: Character[]
   aiLoading: boolean
   generatingCharImg: string | null
+  syncingCharImg: string | null
   batchProgress: BatchProgress | null
   uploadingField: string | null
   copiedField: string | null
   handleGenerateCharSheet: (charId: string) => Promise<void>
   handleGenerateCharImage: (charId: string) => Promise<void>
-  handleUpload: (file: File, options: UploadOptions, fieldKey: string) => Promise<void>
-  handleCopy: (text: string, fieldId: string) => Promise<void>
-}
-
-export interface SceneImagesPanelProps {
-  scenes: Scene[]
-  aiLoading: boolean
-  generatingSceneImg: string | null
-  batchProgress: BatchProgress | null
-  uploadingField: string | null
-  copiedField: string | null
-  handleGenerateSceneImage: (sceneId: string) => Promise<void>
+  handleSyncCharImageToCos: (charId: string) => Promise<void>
   handleUpload: (file: File, options: UploadOptions, fieldKey: string) => Promise<void>
   handleCopy: (text: string, fieldId: string) => Promise<void>
 }
