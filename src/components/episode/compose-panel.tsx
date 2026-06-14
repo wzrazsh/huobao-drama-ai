@@ -114,7 +114,7 @@ export function ComposePanel({
       initial="initial"
       animate="animate"
       exit="exit"
-      className="flex flex-col h-full"
+      className="flex flex-col h-full overflow-y-auto"
     >
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-3 border-b border-border/50 flex-wrap gap-2">

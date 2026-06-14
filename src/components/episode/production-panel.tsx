@@ -95,7 +95,7 @@ export function ProductionPanel({
     : 0
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full overflow-y-auto">
       {/* Header */}
       <div className="flex items-center justify-between px-6 py-3 border-b border-border/50 flex-wrap gap-2">
         <div className="flex items-center gap-3">

@@ -116,7 +116,7 @@ export function StoryboardPanel({
 
   // Storyboard cards with media preview + action buttons
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full overflow-y-auto">
       <div className="flex items-center justify-between px-6 py-3 border-b border-border/50 flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <span className="text-xs font-mono text-primary/80">05</span>

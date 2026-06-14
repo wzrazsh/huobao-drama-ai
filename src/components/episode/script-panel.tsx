@@ -45,7 +45,7 @@ export function ScriptPanel({
 
   if (activeStep === 'raw') {
     return (
-      <div className="flex flex-col h-full">
+      <div className="flex flex-col h-full overflow-y-auto">
         {/* Toolbar */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-border/50">
           <div className="flex items-center gap-3">
@@ -173,7 +173,7 @@ export function ScriptPanel({
 
   // Content exists → editable textarea
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full overflow-y-auto">
       <div className="flex items-center justify-between px-6 py-3 border-b border-border/50">
         <div className="flex items-center gap-3">
           <span className="text-xs font-mono text-primary/80">02</span>
