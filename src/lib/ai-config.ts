@@ -450,6 +450,43 @@ export async function autoInitProviders(): Promise<string[]> {
 }
 
 // ============================================================
+// <think>-tag stripper for non-streaming responses.
+//
+// Some providers (notably MiniMax M3) leak their chain-of-thought
+// into the regular `content` field of the chat-completion response
+// rather than a separate `reasoning_content` field. We strip any
+// <think>...</think> block from the returned text so the saved
+// rawContent / scriptContent / parsed JSON is always clean.
+//
+// The streaming variant lives in src/lib/agents/factory.ts; this
+// one only sees the fully-assembled final content string, so a
+// single non-greedy regex is enough.
+// ============================================================
+
+function stripThinkTags(text: string): string {
+  if (!text) return text
+  // Stateful scanner: a flat regex would over-greedy match nested
+  // <think>...<think>...</think>... patterns and lose content.
+  // We walk the string, find the next <think>, then the matching
+  // </think> (first occurrence after the open), and skip the range.
+  // Anything after a dangling unterminated <think> is also dropped.
+  let out = ''
+  let i = 0
+  while (i < text.length) {
+    const openIdx = text.indexOf('<think>', i)
+    if (openIdx === -1) {
+      out += text.slice(i)
+      break
+    }
+    out += text.slice(i, openIdx)
+    const closeIdx = text.indexOf('</think>', openIdx + '<think>'.length)
+    if (closeIdx === -1) break
+    i = closeIdx + '</think>'.length
+  }
+  return out.trimStart()
+}
+
+// ============================================================
 // AI Client — unified interface with multi-provider support
 // ============================================================
 
@@ -519,7 +556,9 @@ export const aiClient = {
     messages.push({ role: 'user', content: prompt })
 
     const response = await this.chatCompletion(messages, options)
-    return response.choices?.[0]?.message?.content ?? ''
+    // Strip leaked <think> reasoning that some providers (MiniMax M3)
+    // emit into the visible content field.
+    return stripThinkTags(response.choices?.[0]?.message?.content ?? '')
   },
 
   async chatJson<T = unknown>(
@@ -551,7 +590,8 @@ export const aiClient = {
       temperature: options?.temperature ?? 0.3,
     })
 
-    const content = response.choices?.[0]?.message?.content ?? ''
+    // Strip leaked <think> reasoning before JSON extraction.
+    const content = stripThinkTags(response.choices?.[0]?.message?.content ?? '')
     return parseJsonFromLlmResponse<T>(content)
   },
 

@@ -109,3 +109,6 @@ data/skills/
 
 # Caddyfile (local dev reverse proxy, not needed in repo)
 Caddyfile
+
+# next-auth session cookies (contain CSRF tokens / signed session IDs)
+cookies.txt

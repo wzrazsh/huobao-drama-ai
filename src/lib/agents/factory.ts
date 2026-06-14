@@ -117,6 +117,122 @@ async function getAgentConfig(
 const LLM_INACTIVITY_TIMEOUT = 120_000 // 2 min without ANY data → abort
 const THINKING_STREAM_INTERVAL = 400   // Throttle thinking events to every 400ms
 
+// ============================================================
+// Streaming <think>-tag stripper.
+//
+// Some providers (notably MiniMax M3) leak their chain-of-thought
+// into the regular streamed `content` field rather than the
+// structured `reasoning_content` field. To keep the final
+// `assistantMessage.content` clean, we strip every <think>...</think>
+// block from the visible stream. The function is stateful: it carries
+// the in/outside-of-tag flag and a short pending suffix across calls
+// so that tags split across SSE chunks are handled correctly.
+//
+// The longest tag we may need to buffer is len('</think>') = 8, so we
+// only ever hold up to 7 characters of pending text.
+// ============================================================
+
+const THINK_TAG_OPEN = '<think>'
+const THINK_TAG_CLOSE = '</think>'
+// The longest tag we might have to buffer is the opening one. While
+// `pending` is shorter than this, it could still grow into the start
+// of a tag. Once it is at least this long, it is guaranteed not to
+// be a tag prefix and we can flush any "non-matching" prefix to the
+// output.
+const TAG_MAX_LEN = Math.max(THINK_TAG_OPEN.length, THINK_TAG_CLOSE.length)
+
+type ThinkState = { in: boolean; pending: string; ever: boolean }
+
+// Stateful streaming <think>-tag stripper. Walks the chunk char by
+// char, keeping a short `pending` buffer (max length TAG_MAX_LEN-1)
+// to detect tags that straddle chunk boundaries. While `inTag` is
+// true, we suppress all output until we see the matching </think>.
+// Outside of a tag, we flush any pending prefix that can no longer
+// be the start of either tag.
+function stripThinkTagsStreaming(
+  chunk: string,
+  startIn: boolean,
+  startPending: string,
+  startEver: boolean,
+  setState: (state: ThinkState) => void
+): string {
+  let inTag = startIn
+  let ever = startEver
+  let pending = startPending
+  let out = ''
+  for (let i = 0; i < chunk.length; i++) {
+    pending += chunk[i]
+
+    if (inTag) {
+      // We're inside a <think> block — wait for the matching close.
+      if (pending.endsWith(THINK_TAG_CLOSE)) {
+        inTag = false
+        pending = ''
+      }
+      continue
+    }
+
+    if (pending.endsWith(THINK_TAG_OPEN)) {
+      // Just opened a think block. Drop the buffer and start hiding.
+      inTag = true
+      ever = true
+      pending = ''
+      continue
+    }
+
+    if (pending.length >= TAG_MAX_LEN) {
+      // Pending can no longer be a tag prefix. Flush it all.
+      out += pending
+      pending = ''
+      continue
+    }
+
+    if (pending.endsWith(THINK_TAG_OPEN)) {
+      // Just opened a think block. Drop the buffer and start hiding.
+      inTag = true
+      everInThink = true
+      pending = ''
+      continue
+    }
+    // pending is shorter than TAG_MAX_LEN and doesn't end with the
+    // open tag. We may still need to keep it buffered if it could
+    // grow into a tag prefix on the next chunk. Find the longest
+    // suffix of `pending` that matches a prefix of either tag; flush
+    // the rest of the characters.
+    let bestPrefixLen = 0
+    for (const tag of [THINK_TAG_OPEN, THINK_TAG_CLOSE]) {
+      const maxMatch = Math.min(pending.length, tag.length)
+      for (let k = maxMatch; k > bestPrefixLen; k--) {
+        let ok = true
+        for (let j = 0; j < k; j++) {
+          if (pending[pending.length - k + j] !== tag[j]) { ok = false; break }
+        }
+        if (ok) { bestPrefixLen = k; break }
+      }
+    }
+    if (bestPrefixLen === 0) {
+      out += pending
+      pending = ''
+    } else if (bestPrefixLen < pending.length) {
+      out += pending.slice(0, pending.length - bestPrefixLen)
+      pending = pending.slice(pending.length - bestPrefixLen)
+    }
+  }
+
+  setState({ in: inTag, pending, ever })
+  return out
+}
+
+// Drop any pending characters that are still in the buffer when the
+// stream ends. We deliberately do NOT flush them: if we ended
+// mid-open-tag, the opening <think> was already consumed, so the
+// leftover bytes are either a partial open tag (must be dropped to
+// avoid a dangling "<think" in the saved text) or a partial close
+// tag (model was mid-thought when the stream ended, also dropped).
+function flushThinkPending(state: ThinkState): void {
+  state.pending = ''
+}
+
 async function callLLMWithTools(
   messages: ChatMessage[],
   tools: ReturnType<typeof getOpenAIToolsForAgent>,
@@ -268,12 +384,29 @@ async function callLLMWithTools(
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
 
+    // We accumulate `content` in a "visible" state — MiniMax M3 leaks its
+    // chain-of-thought into the streamed content field (a known upstream
+    // issue, see github.com/NousResearch/hermes-agent#43827). We track
+    // whether we are currently inside a <think>...</think> block and
+    // drop any delta that would land inside one, so the final assistant
+    // message content is always pure user-facing output.
     let content = ''
     let reasoningContent = ''
     let finishReason = ''
     const toolCallsMap = new Map<number, { id: string; name: string; arguments: string }>()
 
+    // Streamed tag state for the "visible" content buffer.
+    // `everInThink` is sticky — once true it stays true, so the
+    // finalizer at the end of the stream can know whether to strip
+    // a leading newline that followed a now-closed </think>.
+    // `inThinkTag` is the live "currently hiding" flag.
+    // `pending` holds a partial <think> / </think> tag so we can
+    // emit it once we know whether it is opening or closing.
+    let inThinkTag = false
+    let everInThink = false
+    let thinkPending = ''
     let buffer = ''
+
     let chunksReceived = 0
 
     while (true) {
@@ -308,9 +441,25 @@ async function callLLMWithTools(
             emitThinkingStream(reasoningContent)
           }
 
-          // Accumulate and stream text content as thinking
+          // Accumulate and stream text content as thinking.
+          // We strip any <think>...</think> block from the *visible*
+          // content stream because some providers (notably MiniMax M3)
+          // leak their chain-of-thought into the regular content field
+          // instead of using a separate reasoning_content field. The
+          // tags may also straddle chunks, so we hold a short pending
+          // suffix and only append once we know it isn't a tag.
           if (delta?.content) {
-            content += delta.content
+            const visible = stripThinkTagsStreaming(
+              delta.content,
+              inThinkTag,
+              thinkPending,
+              (state) => {
+                inThinkTag = state.in
+                thinkPending = state.pending
+                if (state.ever) everInThink = true
+              }
+            )
+            content += visible
             // Stream content as thinking events so user sees the LLM's
             // thought process in real-time (especially for storyboard_breaker)
             emitThinkingStream(content)
@@ -476,10 +625,18 @@ async function callLLMWithTools(
       })
     }
 
+    // If we ever entered a <think> block during streaming, drop any
+    // leading whitespace that immediately followed its closing tag.
+    // MiniMax M3 typically emits a stray '\n' between </think> and
+    // its actual answer (e.g. before <scriptItem>...</scriptItem>).
+    const finalContent = everInThink
+      ? (content || '').replace(/^\s*\n/, '')
+      : (content || null)
+
     return {
       message: {
         role: 'assistant',
-        content: content || null,
+        content: finalContent,
         ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
       },
       finishReason: finishReason || 'stop',
