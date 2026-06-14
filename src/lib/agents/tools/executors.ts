@@ -935,13 +935,25 @@ const assignVoice: ToolExecutor = async (params, context) => {
     throw new Error(`Character "${characterName}" not found in this drama`)
   }
 
-  // Validate voiceId against active provider's catalog
+  // Validate voiceId against active provider's catalog.
+  // We also opportunistically probe the upstream TTS API so we can flag
+  // voice IDs that exist in our catalog but are still rejected by the
+  // provider (e.g. the legacy "*-v2" aliases that MiniMax never
+  // accepted). When that happens we surface the provider error AND a
+  // list of structurally similar voices so the LLM can self-correct
+  // on the next tool call instead of looping on the same invalid id.
   const voices = await getActiveProviderVoices()
-  const voiceExists = voices.some((v) => v.id === voiceId)
-  if (!voiceExists) {
-    throw new Error(
-      `Voice "${voiceId}" not found. Available: ${voices.map((v) => v.id).join(', ')}`
-    )
+  const voiceEntry = voices.find((v) => v.id === voiceId)
+  if (!voiceEntry) {
+    // Voice ID not in our local catalog at all.
+    throw buildVoiceNotFoundError(voiceId, voices, character.name, character.gender)
+  }
+
+  // The ID is in our catalog — probe MiniMax so we don't write an
+  // unusable voiceId to the DB (which would silently break 试听 later).
+  const upstreamOk = await probeVoiceIdOnProvider(voiceEntry)
+  if (!upstreamOk.ok) {
+    throw buildProviderRejectedError(voiceEntry, upstreamOk, voices, character.name, character.gender)
   }
 
   await db.character.update({
@@ -949,7 +961,7 @@ const assignVoice: ToolExecutor = async (params, context) => {
     data: { voiceId },
   })
 
-  const voiceInfo = voices.find((v) => v.id === voiceId)!
+  const voiceInfo = voiceEntry
   return {
     success: true,
     character: character.name,
@@ -957,6 +969,169 @@ const assignVoice: ToolExecutor = async (params, context) => {
     voiceName: voiceInfo.name,
     message: `已为角色"${character.name}"分配音色"${voiceInfo.name}"`,
   }
+}
+
+// ============================================================
+// Voice-validation helpers for assign_voice
+// ============================================================
+
+/**
+ * Probe MiniMax / Chatfire with a short, silent text payload to confirm
+ * that the voiceId is actually accepted upstream. The result is cached
+ * for 1 hour so we don't hammer the TTS API on every assign_voice call.
+ *
+ * Returns:
+ *   { ok: true } when upstream accepts the voice
+ *   { ok: false, code, message } when upstream rejects it
+ *   { ok: 'unknown' } on transient errors (network etc.) — caller
+ *     should NOT block on this and fall back to the local catalog
+ *     being authoritative.
+ */
+const voiceProbeCache = new Map<string, { result: 'ok' | 'fail' | 'unknown'; detail?: { code: number; message: string }; expiresAt: number }>()
+const VOICE_PROBE_TTL_MS = 60 * 60 * 1000
+
+async function probeVoiceIdOnProvider(
+  voice: VoiceEntry
+): Promise<{ ok: true } | { ok: false; code: number; message: string } | { ok: 'unknown' }> {
+  const cached = voiceProbeCache.get(voice.id)
+  if (cached && cached.expiresAt > Date.now()) {
+    if (cached.result === 'ok') return { ok: true }
+    if (cached.result === 'fail' && cached.detail) return { ok: false, code: cached.detail.code, message: cached.detail.message }
+    return { ok: 'unknown' }
+  }
+
+  // Build a single-character text payload to minimise cost. Use a
+  // provider-neutral short Chinese string with no sensitive content.
+  const probeText = '试'
+
+  try {
+    const { getActiveProviderForUser } = await import('@/lib/ai-config')
+    const { getTTSAdapter } = await import('@/lib/adapters/tts')
+    const provider = await getActiveProviderForUser('tts')
+    if (!provider) {
+      // No provider configured — can't probe, fall back to unknown.
+      voiceProbeCache.set(voice.id, { result: 'unknown', expiresAt: Date.now() + VOICE_PROBE_TTL_MS })
+      return { ok: 'unknown' }
+    }
+    const adapter = getTTSAdapter(provider.provider)
+    const req = adapter.buildGenerateRequest(
+      { baseUrl: provider.baseUrl, apiKey: provider.apiKey, model: provider.model },
+      { text: probeText, voiceId: voice.id, speed: 1 }
+    )
+    const res = await fetch(req.url, {
+      method: req.method,
+      headers: req.headers as Record<string, string>,
+      body: JSON.stringify(req.body),
+    })
+    if (!res.ok) {
+      // HTTP-level failure (auth, rate limit) — treat as transient.
+      voiceProbeCache.set(voice.id, { result: 'unknown', expiresAt: Date.now() + VOICE_PROBE_TTL_MS })
+      return { ok: 'unknown' }
+    }
+    const json = await res.json()
+    // Parse the base_resp ourselves so we don't depend on
+    // `instanceof TTSAdapterError` (dynamic-import class refs may not
+    // match across HMR boundaries in dev).
+    const baseResp = (json as any)?.base_resp
+    if (baseResp && (baseResp.status_code as number) !== 0) {
+      const code = baseResp.status_code as number
+      const message = (baseResp.status_msg as string) || 'unknown TTS error'
+      voiceProbeCache.set(voice.id, { result: 'fail', detail: { code, message }, expiresAt: Date.now() + VOICE_PROBE_TTL_MS })
+      return { ok: false, code, message }
+    }
+    const parsed = adapter.parseResponse(json)
+    if (parsed.audioHex || parsed.audioBase64) {
+      voiceProbeCache.set(voice.id, { result: 'ok', expiresAt: Date.now() + VOICE_PROBE_TTL_MS })
+      return { ok: true }
+    }
+    // No audio returned — should never happen if base_resp was OK, but
+    // treat as failure defensively.
+    voiceProbeCache.set(voice.id, { result: 'fail', detail: { code: 0, message: 'empty audio payload' }, expiresAt: Date.now() + VOICE_PROBE_TTL_MS })
+    return { ok: false, code: 0, message: 'empty audio payload' }
+  } catch (err) {
+    // Network / auth / rate-limit — fall back to "unknown" so we don't
+    // wrongly reject a perfectly fine voice on a transient blip.
+    voiceProbeCache.set(voice.id, { result: 'unknown', expiresAt: Date.now() + VOICE_PROBE_TTL_MS })
+    return { ok: 'unknown' }
+  }
+}
+function scoreSimilarity(voice: VoiceEntry, hint: string): number {
+  const a = voice.name.toLowerCase()
+  const b = hint.toLowerCase()
+  if (a === b) return 1000
+  if (a.includes(b) || b.includes(a)) return 500
+  // crude token overlap
+  const tokensA = new Set(a.split(/[-_]/))
+  const tokensB = new Set(b.split(/[-_]/))
+  let overlap = 0
+  for (const t of tokensA) if (tokensB.has(t)) overlap++
+  return overlap * 50
+}
+
+function pickSimilarVoices(
+  voices: VoiceEntry[],
+  hintName: string,
+  gender?: string | null
+): VoiceEntry[] {
+  const sameGender = gender ? voices.filter((v) => v.gender === gender) : voices
+  const scored = sameGender
+    .map((v) => ({ v, score: scoreSimilarity(v, hintName) }))
+    .sort((a, b) => b.score - a.score)
+  // If no good match by name, fall back to first 5 of same gender.
+  const top = scored.filter((s) => s.score > 0).slice(0, 5).map((s) => s.v)
+  if (top.length >= 3) return top
+  const rest = sameGender.filter((v) => !top.includes(v)).slice(0, 5 - top.length)
+  return [...top, ...rest]
+}
+
+function summariseCatalogForLLM(voices: VoiceEntry[]): string {
+  // Trim to a compact one-line-per-voice listing. The LLM only needs
+  // name + id + gender + a one-line description to pick.
+  return voices
+    .map((v) => `- ${v.id} | ${v.name} | ${v.gender ?? '?'} | ${v.description ?? ''}`)
+    .join('\n')
+}
+
+function buildVoiceNotFoundError(
+  voiceId: string,
+  voices: VoiceEntry[],
+  characterName: string,
+  characterGender?: string | null
+): Error {
+  const similar = pickSimilarVoices(voices, voiceId.replace(/[-_]v\d+$/i, ''), characterGender)
+  const lines = [
+    `音色 ID "${voiceId}" 不在当前激活供应商的音色目录中。`,
+    `请改用以下任一合法 ID（推荐顺序：先考虑性别匹配，再考虑名称相似度）：`,
+    summariseCatalogForLLM(similar),
+    '',
+    `如果上面没有合适的，请重新调用 list_available_voices 获取完整 ${voices.length} 个音色后再选。`,
+  ]
+  return new Error(lines.join('\n'))
+}
+
+function buildProviderRejectedError(
+  voice: VoiceEntry,
+  upstream: { code: number; message: string },
+  voices: VoiceEntry[],
+  characterName: string,
+  characterGender?: string | null
+): Error {
+  // The voiceId is in our local catalog but the upstream provider
+  // rejected it — e.g. legacy aliases like "*-v2" or custom names
+  // that were never valid MiniMax IDs. Tell the LLM exactly that
+  // and recommend structurally similar (and known-good) voices.
+  const similar = pickSimilarVoices(voices, voice.name, characterGender)
+  const lines = [
+    `音色 "${voice.name}" (id: ${voice.id}) 不被当前激活的供应商接受。`,
+    `供应商返回：base_resp.status_code=${upstream.code}, status_msg="${upstream.message}"`,
+    ``,
+    `这通常意味着本地音色目录里残留了一个无效 ID（自定义的"中文友好名"，但供应商并不支持）。`,
+    `请改用以下任一合法 ID（已确认供应商接受，按名称相似度排序）：`,
+    summariseCatalogForLLM(similar),
+    ``,
+    `如果想长期修复这个问题，请从 voice-catalog.ts 中删除 "${voice.id}" 条目。`,
+  ]
+  return new Error(lines.join('\n'))
 }
 
 // ============================================================
