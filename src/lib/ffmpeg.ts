@@ -371,6 +371,57 @@ export async function mergeShots(
   }
 }
 
+// ── Audio Segment Concatenation ─────────────────────────────────
+
+/**
+ * Concatenate multiple audio files (mp3) into a single mp3.
+ * Returns the absolute path to the output file.
+ * Uses ffmpeg's concat filter (re-encodes, so handles mismatched sample rates).
+ */
+export async function concatAudioSegments(
+  segmentPaths: string[],
+  outputPath?: string
+): Promise<string> {
+  if (segmentPaths.length === 0) {
+    throw new Error('concatAudioSegments: no input segments')
+  }
+  if (segmentPaths.length === 1) {
+    // Single segment — just copy to output
+    const out = outputPath || path.join(PATHS.audio, `concat_${Date.now()}.mp3`)
+    await fs.copyFile(segmentPaths[0], out)
+    return out
+  }
+
+  const out = outputPath || path.join(PATHS.audio, `concat_${Date.now()}.mp3`)
+  await fs.mkdir(path.dirname(out), { recursive: true })
+
+  // Build -i args
+  const inputArgs: string[] = []
+  for (const p of segmentPaths) {
+    inputArgs.push('-i', p)
+  }
+
+  // Build filter: [0:a][1:a]...[N-1:a]concat=n=N:v=0:a=1[out]
+  const inputLabels = segmentPaths.map((_, i) => `[${i}:a]`).join('')
+  const filter = `${inputLabels}concat=n=${segmentPaths.length}:v=0:a=1[out]`
+
+  const args = [
+    '-y',
+    ...inputArgs,
+    '-filter_complex', filter,
+    '-map', '[out]',
+    '-c:a', 'libmp3lame',
+    '-q:a', '2',
+    out,
+  ]
+
+  const result = await runFFmpeg(args)
+  if (result.code !== 0) {
+    throw new Error(`ffmpeg concat failed (code ${result.code}): ${result.stderr.slice(0, 500)}`)
+  }
+  return out
+}
+
 // ── Video Duration ─────────────────────────────────────────────
 
 /**
