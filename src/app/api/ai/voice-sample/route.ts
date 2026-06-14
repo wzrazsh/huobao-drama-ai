@@ -86,9 +86,13 @@ export async function POST(request: NextRequest) {
     // Parse response based on content type
     const contentType = res.headers.get('content-type') || ''
     let audioUrl = ''
+    let responseBytes = 0
+    let upstreamPreview = ''
 
     if (contentType.includes('application/json')) {
       const jsonResult = await res.json()
+      // parseResponse throws TTSAdapterError when base_resp.status_code !== 0,
+      // which surfaces upstream error info to the caller instead of swallowing it.
       const parsed = adapter.parseResponse(jsonResult)
       if (parsed.audioHex) {
         // Convert hex to base64 data URL
@@ -101,13 +105,32 @@ export async function POST(request: NextRequest) {
     } else {
       // Binary audio response
       const buffer = Buffer.from(await res.arrayBuffer())
-      const base64 = buffer.toString('base64')
-      audioUrl = `data:audio/wav;base64,${base64}`
+      responseBytes = buffer.byteLength
+      if (responseBytes > 0) {
+        const base64 = buffer.toString('base64')
+        audioUrl = `data:audio/wav;base64,${base64}`
+      } else {
+        upstreamPreview = 'empty binary response'
+      }
     }
 
     if (!audioUrl) {
+      // Defensive fallback — should normally be unreachable now that
+      // parseResponse throws on upstream errors.
+      console.error('[voice-sample] Empty audio payload', {
+        provider: provider.provider,
+        model: config.model,
+        voiceId,
+        contentType,
+        responseBytes,
+        upstreamPreview,
+      })
       return NextResponse.json(
-        { error: '语音生成返回数据为空' },
+        {
+          error: '语音生成返回数据为空',
+          hint: '请检查 voiceId 是否正确（参考 MiniMax 官方音色列表 https://platform.minimaxi.com/docs/faq/system-voice-id）',
+          voiceId,
+        },
         { status: 500 }
       )
     }

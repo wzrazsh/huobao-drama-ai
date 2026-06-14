@@ -51,15 +51,18 @@ export class MiniMaxTTSAdapter implements TTSProviderAdapter {
   } {
     const resp = result as Record<string, unknown>
 
-    // Check for error in base_resp
+    // Check for error in base_resp — surface upstream error info so callers
+    // can show a useful toast instead of the generic "语音生成返回数据为空".
     const baseResp = resp.base_resp as Record<string, unknown> | undefined
     if (baseResp && (baseResp.status_code as number) !== 0) {
-      return {
-        format: 'mp3',
-        // Return empty audio on error — caller should check base_resp separately
-        // or we could throw; but the interface doesn't have an error field
-        // so we return minimal info
-      }
+      const code = baseResp.status_code as number
+      const msg = (baseResp.status_msg as string) || 'unknown TTS error'
+      throw new TTSAdapterError(
+        `TTS provider error ${code}: ${msg}`,
+        code,
+        msg,
+        baseResp
+      )
     }
 
     const data = resp.data as Record<string, unknown> | undefined
@@ -422,4 +425,33 @@ function uint8ArrayToBase64(bytes: Uint8Array): string {
   return typeof btoa !== 'undefined'
     ? btoa(binary)
     : Buffer.from(binary, 'binary').toString('base64')
+}
+
+// ============================================================================
+// Error Type
+// ============================================================================
+
+/**
+ * Error thrown by a TTS adapter when the upstream provider returns a
+ * non-zero `base_resp.status_code`. Carries the upstream code, message and
+ * full base_resp object so callers can render meaningful diagnostics
+ * instead of a generic "返回数据为空" toast.
+ */
+export class TTSAdapterError extends Error {
+  readonly providerCode: number
+  readonly providerMessage: string
+  readonly baseResp: Record<string, unknown>
+
+  constructor(
+    message: string,
+    providerCode: number,
+    providerMessage: string,
+    baseResp: Record<string, unknown>
+  ) {
+    super(message)
+    this.name = 'TTSAdapterError'
+    this.providerCode = providerCode
+    this.providerMessage = providerMessage
+    this.baseResp = baseResp
+  }
 }

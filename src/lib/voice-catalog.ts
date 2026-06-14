@@ -26,8 +26,8 @@ const MINIMAX_VOICES: VoiceEntry[] = [
   { id: 'male-qn-jingying', name: '精英青年', provider: 'minimax', language: 'zh', description: '沉稳精英男声', gender: 'male' },
   { id: 'male-qn-badao', name: '霸道青年', provider: 'minimax', language: 'zh', description: '霸道强硬男声', gender: 'male' },
   { id: 'male-qn-daxuesheng', name: '大学生', provider: 'minimax', language: 'zh', description: '阳光大学生男声', gender: 'male' },
-  { id: 'male-qn-qingse-v2', name: '青涩青年V2', provider: 'minimax', language: 'zh', description: '升级版清澈青年男声', gender: 'male' },
-  { id: 'male-qn-jingying-v2', name: '精英青年V2', provider: 'minimax', language: 'zh', description: '升级版沉稳精英男声', gender: 'male' },
+  { id: 'male-qn-qingse-jingpin', name: '青涩青年V2', provider: 'minimax', language: 'zh', description: '升级版清澈青年男声 (MiniMax精品)', gender: 'male' },
+  { id: 'male-qn-jingying-jingpin', name: '精英青年V2', provider: 'minimax', language: 'zh', description: '升级版沉稳精英男声 (MiniMax精品)', gender: 'male' },
   // ── 中年男声 ──
   { id: 'male-qn-qiangzhuang', name: '强壮男声', provider: 'minimax', language: 'zh', description: '力量感强壮男声', gender: 'male' },
   { id: 'male-qn-qingchun', name: '青春男声', provider: 'minimax', language: 'zh', description: '阳光青春男声', gender: 'male' },
@@ -40,10 +40,10 @@ const MINIMAX_VOICES: VoiceEntry[] = [
   { id: 'female-yujie', name: '御姐', provider: 'minimax', language: 'zh', description: '成熟御姐声', gender: 'female' },
   { id: 'female-chengshu', name: '成熟女性', provider: 'minimax', language: 'zh', description: '知性成熟女声', gender: 'female' },
   { id: 'female-tianmei', name: '甜美女性', provider: 'minimax', language: 'zh', description: '温柔甜美女声', gender: 'female' },
-  { id: 'female-shaonv-v2', name: '少女V2', provider: 'minimax', language: 'zh', description: '升级版甜美少女声', gender: 'female' },
-  { id: 'female-yujie-v2', name: '御姐V2', provider: 'minimax', language: 'zh', description: '升级版成熟御姐声', gender: 'female' },
-  { id: 'female-chengshu-v2', name: '成熟女性V2', provider: 'minimax', language: 'zh', description: '升级版知性成熟女声', gender: 'female' },
-  { id: 'female-tianmei-v2', name: '甜美女性V2', provider: 'minimax', language: 'zh', description: '升级版温柔甜美女声', gender: 'female' },
+  { id: 'female-shaonv-jingpin', name: '少女V2', provider: 'minimax', language: 'zh', description: '升级版甜美少女声 (MiniMax精品)', gender: 'female' },
+  { id: 'female-yujie-jingpin', name: '御姐V2', provider: 'minimax', language: 'zh', description: '升级版成熟御姐声 (MiniMax精品)', gender: 'female' },
+  { id: 'female-chengshu-jingpin', name: '成熟女性V2', provider: 'minimax', language: 'zh', description: '升级版知性成熟女声 (MiniMax精品)', gender: 'female' },
+  { id: 'female-tianmei-jingpin', name: '甜美女性V2', provider: 'minimax', language: 'zh', description: '升级版温柔甜美女声 (MiniMax精品)', gender: 'female' },
   // ── 特色女声 ──
   { id: 'female-qingxin', name: '清新女声', provider: 'minimax', language: 'zh', description: '清新自然女声', gender: 'female' },
   { id: 'female-wenrou', name: '温柔女声', provider: 'minimax', language: 'zh', description: '温柔舒缓女声', gender: 'female' },
@@ -54,8 +54,6 @@ const MINIMAX_VOICES: VoiceEntry[] = [
   // ── 主持人 ──
   { id: 'presenter_male', name: '男主持人', provider: 'minimax', language: 'zh', description: '专业播音男声', gender: 'male' },
   { id: 'presenter_female', name: '女主持人', provider: 'minimax', language: 'zh', description: '专业播音女声', gender: 'female' },
-  { id: 'presenter_male-v2', name: '男主持人V2', provider: 'minimax', language: 'zh', description: '升级版专业播音男声', gender: 'male' },
-  { id: 'presenter_female-v2', name: '女主持人V2', provider: 'minimax', language: 'zh', description: '升级版专业播音女声', gender: 'female' },
   // ── 有声书 ──
   { id: 'audiobook_male_1', name: '有声书男声1', provider: 'minimax', language: 'zh', description: '有声读物男声', gender: 'male' },
   { id: 'audiobook_female_1', name: '有声书女声1', provider: 'minimax', language: 'zh', description: '有声读物女声', gender: 'female' },
