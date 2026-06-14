@@ -20,8 +20,29 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Progress } from '@/components/ui/progress'
 import type { ProductionPanelProps } from './types'
+import type { Storyboard } from '@/lib/store'
+
+// ── Helpers ─────────────────────────────────────────────────────
+
+function getDialogueDisplay(sb: Storyboard): { speaker: string; text: string }[] {
+  if (sb.ttsSegments) {
+    try {
+      const segs = JSON.parse(sb.ttsSegments)
+      if (Array.isArray(segs) && segs.length > 0) {
+        return segs
+          .filter((s: { text?: string }) => s && typeof s.text === 'string')
+          .map((s: { speaker?: string; text: string }) => ({
+            speaker: s.speaker || '',
+            text: s.text,
+          }))
+      }
+    } catch {
+      // fall through
+    }
+  }
+  return [{ speaker: sb.dialogueChar || '', text: sb.dialogue || '' }]
+}
 
 export function ProductionPanel({
   storyboards,
@@ -312,14 +333,13 @@ export function ProductionPanel({
                               <span className={`inline-flex items-center gap-0.5 ${isComposed ? 'text-emerald-500 font-medium' : 'text-muted-foreground/40'}`}>
                                 <Layers className="size-2.5" /> 合成
                               </span>
-                            </div>
-                            {/* Subtitle preview */}
-                            {sb.dialogue && (
-                              <div className="text-[10px] text-muted-foreground italic bg-muted/30 rounded px-2 py-1 mb-2">
-                                {sb.dialogueChar && <span className="font-medium not-italic text-foreground/80">{sb.dialogueChar}：</span>}
-                                {sb.dialogue}
-                              </div>
-                            )}
+                            <div className="text-[10px] text-muted-foreground italic bg-muted/30 rounded px-2 py-1 mb-2 space-y-0.5">
+                              {getDialogueDisplay(sb).map((d, i) => (
+                                <div key={i}>
+                                  {d.speaker && <span className="font-medium not-italic text-foreground/80">{d.speaker}：</span>}
+                                  {d.text}
+                                </div>
+                              ))}
                           </div>
 
                           {/* Per-shot actions */}
@@ -446,11 +466,13 @@ export function ProductionPanel({
                   </div>
                   {/* Subtitle overlay */}
                   {currentPreviewStoryboard.dialogue && !currentPreviewStoryboard.composedUrl && (
-                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 text-white text-sm px-4 py-1.5 rounded max-w-[80%] text-center">
-                      {currentPreviewStoryboard.dialogueChar && (
-                        <span className="font-medium">{currentPreviewStoryboard.dialogueChar}：</span>
-                      )}
-                      {currentPreviewStoryboard.dialogue}
+                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 text-white text-sm px-4 py-1.5 rounded max-w-[80%] text-center space-y-0.5">
+                      {getDialogueDisplay(currentPreviewStoryboard).map((d, i) => (
+                        <div key={i}>
+                          {d.speaker && <span className="font-medium">{d.speaker}：</span>}
+                          {d.text}
+                        </div>
+                      ))}
                     </div>
                   )}
                   {/* Hidden audio for TTS sync */}

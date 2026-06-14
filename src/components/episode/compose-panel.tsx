@@ -23,6 +23,33 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Progress } from '@/components/ui/progress'
 import { panelVariants } from './helpers'
 import type { ComposePanelProps } from './types'
+import type { Storyboard } from '@/lib/store'
+
+// ── Helpers ─────────────────────────────────────────────────────
+
+/**
+ * Render a storyboard's dialogue as a list of {speaker, text} pairs.
+ * If `ttsSegments` is present, returns one entry per segment; otherwise
+ * falls back to the legacy single-speaker {dialogueChar, dialogue} pair.
+ */
+function getDialogueDisplay(sb: Storyboard): { speaker: string; text: string }[] {
+  if (sb.ttsSegments) {
+    try {
+      const segs = JSON.parse(sb.ttsSegments)
+      if (Array.isArray(segs) && segs.length > 0) {
+        return segs
+          .filter((s: { text?: string }) => s && typeof s.text === 'string')
+          .map((s: { speaker?: string; text: string }) => ({
+            speaker: s.speaker || '',
+            text: s.text,
+          }))
+      }
+    } catch {
+      // fall through to legacy rendering
+    }
+  }
+  return [{ speaker: sb.dialogueChar || '', text: sb.dialogue || '' }]
+}
 
 export function ComposePanel({
   storyboards,
@@ -300,16 +327,15 @@ export function ComposePanel({
                             <span className={`inline-flex items-center gap-0.5 ${hasTts ? 'text-emerald-500 font-medium' : sb.dialogue ? 'text-amber-500' : 'text-muted-foreground/40'}`}>
                               <Mic className="size-2.5" /> 配音
                             </span>
-                            <ChevronRight className="size-2 text-muted-foreground/30" />
-                            <span className={`inline-flex items-center gap-0.5 ${isComposed ? 'text-emerald-500 font-medium' : 'text-muted-foreground/40'}`}>
-                              <Layers className="size-2.5" /> 合成
-                            </span>
-                          </div>
-                          {/* Subtitle preview */}
+                          {/* Subtitle preview — multi-segment aware */}
                           {sb.dialogue && (
-                            <div className="text-[10px] text-muted-foreground italic bg-muted/30 rounded px-2 py-1 mb-2">
-                              {sb.dialogueChar && <span className="font-medium not-italic text-foreground/80">{sb.dialogueChar}：</span>}
-                              {sb.dialogue}
+                            <div className="text-[10px] text-muted-foreground italic bg-muted/30 rounded px-2 py-1 mb-2 space-y-0.5">
+                              {getDialogueDisplay(sb).map((d, i) => (
+                                <div key={i}>
+                                  {d.speaker && <span className="font-medium not-italic text-foreground/80">{d.speaker}：</span>}
+                                  {d.text}
+                                </div>
+                              ))}
                             </div>
                           )}
                         </div>
@@ -396,15 +422,14 @@ export function ComposePanel({
                 <div className="absolute top-3 left-3 bg-black/60 text-white text-xs font-mono px-2 py-0.5 rounded">
                   #{String(currentPreviewStoryboard.shotNumber).padStart(2, '0')} {currentPreviewStoryboard.title}
                 </div>
-                {/* Subtitle overlay */}
-                {currentPreviewStoryboard.dialogue && !currentPreviewStoryboard.composedUrl && (
-                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 text-white text-sm px-4 py-1.5 rounded max-w-[80%] text-center">
-                    {currentPreviewStoryboard.dialogueChar && (
-                      <span className="font-medium">{currentPreviewStoryboard.dialogueChar}：</span>
-                    )}
-                    {currentPreviewStoryboard.dialogue}
-                  </div>
-                )}
+                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/70 text-white text-sm px-4 py-1.5 rounded max-w-[80%] text-center space-y-0.5">
+                    {getDialogueDisplay(currentPreviewStoryboard).map((d, i) => (
+                      <div key={i}>
+                        {d.speaker && <span className="font-medium">{d.speaker}：</span>}
+                        {d.text}
+                      </div>
+                    ))}
+                </div>
                 {/* Hidden audio for TTS sync */}
                 {currentPreviewStoryboard.ttsAudioUrl && (
                   <audio
