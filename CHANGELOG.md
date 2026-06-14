@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.9.1] - 2026-06-03
+### Added
+- Storyboard.ttsSegments — 多角色对白分镜支持 (e.g. 陆辰+林夕 双人对话)
+- `concatAudioSegments` helper in `src/lib/ffmpeg.ts` — ffmpeg 拼接多段 mp3
+- `POST /api/ai/generate-tts` 多段路径 — 接收 `segments` 数组，逐段 TTS + concat + 写回 `ttsSegments` JSON
+- `api.ai.generateTts` 接受可选 `segments` 参数
+- 配音面板 (dubbing-panel) — 显示 "分 N 段" badge，每段独立 audio player 和状态
+- 合成/生产面板 (compose-panel / production-panel) — 字幕显示按 `ttsSegments` 拆分行
+
 
 ### Fixed
 - 修复生产环境数据库schema不同步 — 14个新表/列缺失导致API 500错误
