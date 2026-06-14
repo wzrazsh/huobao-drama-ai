@@ -81,6 +81,168 @@
 支持的模型：MiniMax-M3（LLM）、image-01（图片）、MiniMax-Hailuo-2.3（视频）、speech-2.8-turbo（语音）
 
 ---
+## LTX-2.3 MSR 视频生成工作流
+
+### 概述
+项目使用 liconstudio 的 **MSR (Multiple Subject Reference) LoRA** + LTX-2.3-22B 模型生成多角色一致性视频。
+核心思路：用 4 张演员参考图 + 1 张场景图 → 生成同一角色在视频中**不漂移**的多镜头片段。
+
+### 已部署的 ComfyUI 实例
+
+| 项 | 值 |
+|---|---|
+| **服务地址** | `https://7af418c0a17c4ebe8a43e16edbbbfe97.region2.waas.aigate.cc` |
+| **服务器** | aigate 云端 GPU (4090-24GB, ¥1.78/h) |
+| **ComfyUI 路径** | `/root/comfyui/ComfyUI/` |
+| **SSH 端口** | `40769` |
+| **公网反代 URL** | `https://0b7978c8e1bb4c319157cd51e0472665.region2.waas.aigate.cc` |
+| **登录密码** | `138fe785e788492c862c6a100fe2ecdb` |
+
+### 工作流来源
+
+| 仓库 | 用途 |
+|---|---|
+| https://github.com/liconstudio/ComfyUI-Licon-MSR | LiconMSR 自定义节点 + V1/V2 工作流 |
+| https://github.com/liconstudio/LTX2-trainer-kit-windows | LoRA 训练工具（IC-LoRA 模式）|
+| https://huggingface.co/LiconStudio/LTX-2.3-Multiple-Subject-Reference | MSR LoRA V1 (624MB) |
+
+### 已部署的自定义节点
+
+| 节点 | 路径 | 作用 |
+|---|---|---|
+| `ComfyUI-Licon-MSR` | `/root/comfyui/ComfyUI/custom_nodes/ComfyUI-Licon-MSR/` | 多张参考图 → 41 帧参考视频 |
+| `ComfyUI-PromptRelay` | `/root/comfyui/ComfyUI/custom_nodes/ComfyUI-PromptRelay/` | `PromptRelayEncode` 节点（V2 用）|
+| `ComfyUI-WanVideoWrapper` | (kijai 出品) | LTXVAddGuideMulti、LTXVConditioning 等 |
+
+### 关键模型路径
+
+| 模型 | 路径 |
+|---|---|
+| 主模型 (蒸馏) | `/root/comfyui/ComfyUI/models/checkpoints/ltx-2.3-22b-distilled-1.1.safetensors` |
+| 文本编码器 | `/root/comfyui/ComfyUI/models/text_encoders/gemma_3_12B_it_fp8_e4m3fn.safetensors` |
+| **MSR LoRA (核心)** | `/root/comfyui/ComfyUI/models/loras/LTX-2.3-Licon-MSR-V1.safetensors` (624MB) |
+| 蒸馏 LoRA | `ltx-2.3-22b-distilled-lora-384-1.1.safetensors` |
+### 与 LTX-2.3 MSR 工作流的关联
+
+角色多视图生成后，可以直接作为 **MSR 工作流的演员参考图**：
+- 面部特写（`面部特写_*.png`）→ actor1.jpg / actor2.jpg（最佳）
+- 全身正面 / 侧面（`全身正面_*.png`）→ 备用参考图
+
+实施时把 `data/uploads/dramas/<dramaId>/characters/` 下的图片
+重命名并上传到 ComfyUI input 目录即可。
+
+### 本地工作流备份
+
+所有备份在 `E:/workspace/huobao-drama-ai/.zscripts/`:
+
+| 文件 | 格式 | 用途 |
+|---|---|---|
+| `comfyui_ltx23_msr_10s_api.json` ⭐ | API | **当前活跃工作流 (10秒版, 中文剧本)** |
+| `comfyui_ltx23_msr_v1_api_story.json` | API | 5秒版（早期）|
+| `comfyui_ltx23_msr_v1_4090.json` | UI 画布 | 可拖入 ComfyUI 画布 |
+| `comfyui_ltx23_msr_4090.json` | UI 画布 | V2 改编版（含 PromptRelayEncode）|
+| `comfyui_ltx23_msr_api_4090.json` | API | V2 API 格式 |
+| `comfyui_ltx23_msr_v1_api_v3.json` | API | 5秒版第3次迭代 |
+| `comfyui_full_4090.json` | API | Wan 2.2 I2V 方案 A/B 用 |
+| `comfyui_ltx23_workflow.json` | UI | LTX IC-LoRA 上分工作流 |
+| `install_msr_on_server.sh` | Bash | 云端一键安装脚本 |
+| `parse_lora.py` / `parse_lora2.py` | Python | LoRA 内部结构分析 |
+| `backup/2026-06-13_msr_10s_workflow_backup.md` | Markdown | 完整备份文档 |
+| `github_workflows/` | 目录 | 4 个开源工作流原始 JSON |
+| `loras/` | 目录 | 备份的 LoRA 文件 |
+
+### 服务器 input 目录
+
+`/root/comfyui/ComfyUI/input/` 下的关键文件：
+
+| 文件 | 用途 |
+|---|---|
+| `actor1.jpg` | 演员 1 面部特写（短发女主 - 林夕）|
+| `actor2.jpg` | 演员 2 面部特写（戴眼镜男主 - 陆辰）|
+| `actor3.jpg` | 演员 3 面部特写（戴帽男主）|
+| `actor4.jpg` | 演员 4 面部特写（长发盘起女主）|
+| `huangpu_river_dusk.jpg` | 黄浦江边背景图（1280×720 JPEG）|
+| `comfyui_ltx23_msr_10s_api.json` | 上传的 10秒版工作流 |
+
+### 已生成的视频成果
+
+项目 `data/uploads/dramas/cmqahvjvx0001hnm0cx6zpc1j/scenes/` 下的所有测试视频：
+
+| 文件名 | 时长 | 大小 | 描述 |
+|---|---|---|---|
+| `huangpu_river_dusk_video_WanVideo2_2_I2V_00001.mp4` | 5.06s | 580KB | 方案 A：Wan 2.2 + LoRA 蒸馏 6步 |
+| `huangpu_river_dusk_video_planB_WanVideo2_2_I2V_00002.mp4` | 5.06s | 1.24MB | 方案 B：Wan 2.2 无 LoRA 30步 ⭐ |
+| `huangpu_river_dusk_video_UPSCALED_LTX-2_00001.mp4` | 5.71s | 2.07MB | LTX IC-LoRA 上分 1120×1120 |
+| `huangpu_river_dusk_video_MSR_huangpu_river_msr_00001_.mp4` | 5.71s | 1.08MB | MSR 简化版英文 prompt |
+| `huangpu_river_dusk_video_MSR_STORY_..._luchen_linxi_00001_.mp4` | 5.71s | 1.37MB | MSR 中文剧本版 ⭐ |
+| `huangpu_river_dusk_video_MSR_STORY_10S_..._10s_00001_.mp4` | 9.38s | 2.35MB | MSR 中文剧本 10秒版 ⭐⭐ |
+
+### 工作流参数参考
+
+**MSR 10秒版关键参数**（`.zscripts/comfyui_ltx23_msr_10s_api.json`）:
+
+| 节点 | 参数 | 值 |
+|---|---|---|
+| `[5] CLIPTextEncode` (positive) | text | 中文剧本 (1414 字符) |
+| `[6] CLIPTextEncode` (negative) | text | 194 字符负提示词 |
+| `[8] EmptyLTXVLatentVideo` | length | **240** 帧 = 10 秒 |
+| `[22] LTXVEmptyLatentAudio` | frames_number | 240 |
+| `[15] RandomNoise` | noise_seed | 71382195 |
+| `[20] SaveVideo` | filename_prefix | `huangpu_river_msr_luchen_linxi_10s` |
+| `[28] LiconMSR` | frame_count | 41（参考视频帧数）|
+| `[10] LTXICLoRALoaderModelOnly` | lora_name + strength | `LTX-2.3-Licon-MSR-V1.safetensors` + 1.0 |
+| `[35] LTXVAddGuideMulti` | num_guides | 5（5 个参考图）|
+
+### 重启后恢复流程
+
+```bash
+# 1. SSH 登录
+ssh -p 40769 root@0b7978c8e1bb4c319157cd51e0472665.region2.waas.aigate.cc
+
+# 2. 启动 ComfyUI（节点和模型已永久保留）
+cd /root/comfyui/ComfyUI && nohup /root/miniconda3/bin/python main.py \
+  --preview-method auto --port 8188 --listen 0.0.0.0 --enable-cors-header '*' \
+  > /tmp/comfyui.log 2>&1 & disown
+
+# 3. 上传 5 张图到 input 目录（如果丢了）
+# 4. 上传 .zscripts/comfyui_ltx23_msr_10s_api.json 到 input
+# 5. 在 ComfyUI 界面 Load 该 JSON 即可
+```
+
+### ComfyUI API 接口速查
+
+| 端点 | 用途 |
+|---|---|
+| `GET /system_stats` | GPU 状态 |
+| `GET /queue` | 当前队列 |
+| `POST /prompt` | 提交任务（body: `{"prompt": {...}, "client_id": "..."}`）|
+| `GET /history/{prompt_id}` | 查任务结果 |
+| `GET /view?filename=...&type=output&format=video/h264-mp4` | 下载视频 |
+| `POST /upload/image` | 上传文件（multipart, key 必须是 `image`）|
+| `POST /interrupt` | 中断当前任务 |
+
+### CORS 限制
+
+ComfyUI 服务器在 cloudflare 反代后面，**localhost:3000 不能直接 fetch 它的 API**。需要：
+- 用 `requests` (Python) 跨域调用 ✅
+- 用 `mcp__chrome_devtools_evaluate_script` 在 ComfyUI 页面 fetch ✅
+- 用浏览器直接 fetch ComfyUI API（反代已配 `Access-Control-Allow-Origin: *`）✅
+
+### LoRA 训练备注
+
+MSR LoRA 是用 **IC-LoRA 模式**训练的（不是普通 T2V LoRA），核心：
+- 用 200+ 对"参考视频→目标视频"成对数据
+- LoRA rank=64, alpha=64
+- 目标模块：attn1/attn2 全套 + ff（10 个模块）
+- 48 个 transformer block 全部覆盖
+- 训练配置见 `liconstudio/LTX2-trainer-kit-windows/configs/ltx2_v2v_ic_lora.yaml`
+
+如果要为本项目 4 个角色训练专属 LoRA：
+1. 准备 200+ 段演员视频（含参考-目标对）
+2. 用 `process_videos.py` 预处理
+3. 改 `configs/ltx2_v2v_ic_lora.yaml`
+4. 跑 `train.py`
+5. 4090 大约 6 小时，6000D-84G 约 2 小时
 
 ## 角色多视图功能
 
@@ -138,3 +300,8 @@ CharacterAppearance 表（每个视图一条记录）
 - 系统代理 `127.0.0.1:7897`，推送到 GitHub 时需配置 `http.proxy`
 - 本地 SQLite 数据库：`prisma/db/custom.db`
 - Prisma 生成客户端命令：`npx prisma generate`
+- **ComfyUI 服务器持续扣费（¥1.78/h），不用时记得关闭实例**
+- **MSR LoRA 文件较大（624MB），重新部署需要 5-10 分钟下载**
+- **要重做 MSR 工作流调试时，先改本地 `.zscripts/comfyui_ltx23_msr_10s_api.json` 再上传到服务器**
+- **如果 ComfyUI 出现节点 missing，重启 ComfyUI 即可（自定义节点 git clone 已永久保留）**
+- **要新增备份参考图，命名规则固定为 `actor1.jpg ~ actor4.jpg` + `huangpu_river_dusk.jpg`**
