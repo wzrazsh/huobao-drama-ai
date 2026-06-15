@@ -149,6 +149,13 @@ export async function generatePlatformImage(
   let referenceImages: string[] = []
   let enhancedPrompt = input.prompt.trim()
 
+  // Last-frame continuation: bias the prompt toward an end-of-shot moment so
+  // the result is a believable next beat of the first frame rather than a
+  // re-roll. We only do this when the caller explicitly asked for 'last'.
+  if (input.storyboardFrame === 'last') {
+    enhancedPrompt = `${enhancedPrompt}, continuation of action, slight movement, end-of-shot moment, frozen time instant after the first frame`
+  }
+
   if (episodeId) {
     const refs = await collectStoryboardReferences(
       episodeId,
@@ -176,8 +183,27 @@ export async function generatePlatformImage(
       (url.startsWith('data:') || url.startsWith('http') || url.startsWith('/api/files/'))
   )
 
+  // Last-frame continuity: prepend the already-generated first frame as the
+  // most influential reference image, so the last frame reads as the literal
+  // next instant of the same shot rather than a fresh interpretation.
+  if (input.storyboardFrame === 'last' && storyboard?.firstFrameUrl) {
+    const firstUrl = storyboard.firstFrameUrl.trim()
+    if (firstUrl.startsWith('data:') || firstUrl.startsWith('http') || firstUrl.startsWith('/api/files/')) {
+      referenceImages = [firstUrl, ...referenceImages.filter((u) => u !== firstUrl)]
+    }
+  }
+
   const client = aiClientForUser(actor.userId)
   let base64Image: string
+
+  // MiniMax caps prompt at 1500 chars. Truncate from the front so the
+  // user's original prompt (the part that describes the shot) is preserved
+  // and the consistency wrapper (which is the most easily truncated) is
+  // what gets dropped.
+  const PROMPT_LIMIT = 1200
+  if (enhancedPrompt.length > PROMPT_LIMIT) {
+    enhancedPrompt = enhancedPrompt.slice(enhancedPrompt.length - PROMPT_LIMIT)
+  }
 
   try {
     if (input.storyboardId || input.atmosphere || episodeId) {

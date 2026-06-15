@@ -847,29 +847,34 @@ export function EpisodeWorkspace() {
 
   // ── AI: Generate shot image ────────────────────────────────
 
-  const handleGenerateShotImage = async (storyboard: Storyboard) => {
+  const handleGenerateShotImage = async (
+    storyboard: Storyboard,
+    frame: 'first' | 'last' = 'first'
+  ) => {
     if (!storyboard.imagePrompt) {
       toast({ title: '该镜头没有图片提示词', variant: 'destructive' })
       return
     }
     setGeneratingShotImg(storyboard.id)
     try {
-      const result = await api.ai.generateImage(
+      const result = (await api.ai.generateImage(
         storyboard.imagePrompt,
         '1024x576',
         selectedEpisodeId || undefined,
         storyboard.dialogueChar || undefined,
-      ) as Record<string, unknown>
+        storyboard.location || undefined,
+        { storyboardId: storyboard.id, storyboardFrame: frame }
+      )) as Record<string, unknown>
+
+      // image-service already wrote the URL back to the right field
+      // (firstFrameUrl / lastFrameUrl) for the synchronous case. For the
+      // async poll case, the same write-back runs at the end of
+      // generatePlatformImage via the resolved base64, so we just refetch.
       if (result.status === 'processing' && result.taskId) {
-        toast({ title: `镜头 ${storyboard.shotNumber} 图片生成中...` })
-        const pollResult = await pollAsyncTask('image', result.taskId as string)
-        if (pollResult?.imageBase64) {
-          await api.storyboards.update(storyboard.id, { firstFrameUrl: `data:image/png;base64,${pollResult.imageBase64}` })
-        }
-      } else {
-        await api.storyboards.update(storyboard.id, { firstFrameUrl: result.imageUrl as string })
+        toast({ title: `镜头 ${storyboard.shotNumber} ${frame === 'last' ? '尾' : '首'}帧生成中...` })
+        await pollAsyncTask('image', result.taskId as string)
       }
-      toast({ title: `镜头 ${storyboard.shotNumber} 图片已生成` })
+      toast({ title: `镜头 ${storyboard.shotNumber} ${frame === 'last' ? '尾' : '首'}帧已生成` })
       await fetchEpisode()
     } catch (err) {
       toast({ title: '图片生成失败', description: String(err), variant: 'destructive' })
@@ -877,50 +882,63 @@ export function EpisodeWorkspace() {
       setGeneratingShotImg(null)
     }
   }
-
   // ── AI: Generate all shot images ───────────────────────────
 
   const handleGenerateAllImages = async () => {
-    const pending = storyboards.filter((s) => !s.firstFrameUrl && s.imagePrompt)
-    if (pending.length === 0) {
+    // First generate any missing first frames, then any missing last frames.
+    // The last-frame pass depends on first frames existing so the continuity
+    // reference (prepended in image-service) can be used.
+    const missingFirst = storyboards.filter((s) => !s.firstFrameUrl && s.imagePrompt)
+    const missingLast = storyboards.filter((s) => !s.lastFrameUrl && s.imagePrompt)
+    const total = missingFirst.length + missingLast.length
+    if (total === 0) {
       toast({ title: '没有可生成的镜头图片' })
       return
     }
-    setBatchProgress({ current: 0, total: pending.length, message: '生成图片中...' })
+    setBatchProgress({ current: 0, total, message: '生成图片中...' })
     let successCount = 0
-    for (let i = 0; i < pending.length; i++) {
-      const sb = pending[i]
+    let processed = 0
+
+    const runOne = async (sb: Storyboard, frame: 'first' | 'last') => {
       setGeneratingShotImg(sb.id)
-      setBatchProgress({ current: i + 1, total: pending.length, message: `生成图片 ${i + 1}/${pending.length}...` })
       try {
-        const result = await api.ai.generateImage(
+        const result = (await api.ai.generateImage(
           sb.imagePrompt!,
           '1024x576',
           selectedEpisodeId || undefined,
           sb.dialogueChar || undefined,
-        ) as Record<string, unknown>
+          sb.location || undefined,
+          { storyboardId: sb.id, storyboardFrame: frame }
+        )) as Record<string, unknown>
         if (result.status === 'processing' && result.taskId) {
-          setBatchProgress({ current: i + 1, total: pending.length, message: `图片 ${i + 1}/${pending.length} 异步生成中，等待结果...` })
-          const pollResult = await pollAsyncTask('image', result.taskId as string)
-          if (pollResult?.imageBase64) {
-            await api.storyboards.update(sb.id, { firstFrameUrl: `data:image/png;base64,${pollResult.imageBase64}` })
-          }
-          successCount++
-        } else {
-          await api.storyboards.update(sb.id, { firstFrameUrl: result.imageUrl as string })
-          successCount++
+          setBatchProgress({
+            current: processed + 1,
+            total,
+            message: `${frame === 'last' ? '尾' : '首'}帧 ${processed + 1}/${total} 异步生成中，等待结果...`,
+          })
+          await pollAsyncTask('image', result.taskId as string)
         }
+        successCount++
       } catch {
         // Continue
+      } finally {
+        processed++
+        setGeneratingShotImg(null)
       }
     }
-    setGeneratingShotImg(null)
+
+    for (const sb of missingFirst) {
+      setBatchProgress({ current: processed + 1, total, message: `首帧 ${processed + 1}/${total} 生成中...` })
+      await runOne(sb, 'first')
+    }
+    for (const sb of missingLast) {
+      setBatchProgress({ current: processed + 1, total, message: `尾帧 ${processed + 1}/${total} 生成中...` })
+      await runOne(sb, 'last')
+    }
     setBatchProgress(null)
-    toast({ title: `${successCount}/${pending.length}个镜头图片生成完毕` })
+    toast({ title: `${successCount}/${total} 个镜头帧已生成` })
     await fetchEpisode()
   }
-
-  // ── AI: Grid image generation ──────────────────────────────
 
   const handleGridGenerate = async (config: GridConfig) => {
     if (!selectedEpisodeId) return

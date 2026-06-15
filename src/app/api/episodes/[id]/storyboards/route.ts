@@ -41,6 +41,7 @@ export async function POST(
       imagePrompt,
       videoPrompt,
       atmosphere,
+      location,
     } = body;
 
     if (shotNumber === undefined || shotNumber === null) {
@@ -62,6 +63,7 @@ export async function POST(
         imagePrompt: imagePrompt || null,
         videoPrompt: videoPrompt || null,
         atmosphere: atmosphere || null,
+        location: location || null,
       },
     });
 

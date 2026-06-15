@@ -134,10 +134,12 @@ export interface Storyboard {
   videoPrompt: string | null
   atmosphere: string | null
   bgmPrompt: string | null
-  soundEffect: string | null
   firstFrameUrl: string | null
   lastFrameUrl: string | null
   referenceImages: string | null
+  // Cached scene location, populated by storyboard generation so the
+  // image generator can look up matching scene reference images.
+  location: string | null
   videoUrl: string | null
   ttsAudioUrl: string | null
   ttsSegments: string | null
@@ -146,11 +148,6 @@ export interface Storyboard {
   createdAt: string
   updatedAt: string
 }
-
-// ============================================================
-// View type for client-side navigation
-// ============================================================
-
 // ============================================================
 // Asset Library types
 // ============================================================

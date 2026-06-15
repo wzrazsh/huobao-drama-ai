@@ -188,6 +188,10 @@ model Storyboard {
   soundEffect     String?
   referenceImages String? // JSON array of reference image URLs
   status          String   @default("pending")
+  // Cached scene location name. Filled when the storyboard is generated
+  // and used by the image generator to look up matching scene reference
+  // images for visual consistency.
+  location        String?  @default("")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

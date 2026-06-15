@@ -262,7 +262,7 @@ export function ShotFramesPanel({
                             size="sm"
                             variant="outline"
                             className="h-7 text-[10px] px-2"
-                            onClick={() => handleGenerateShotImage(sb)}
+                            onClick={() => handleGenerateShotImage(sb, 'first')}
                             disabled={isGenerating || aiLoading}
                           >
                             {isGenerating ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
@@ -299,7 +299,7 @@ export function ShotFramesPanel({
                             size="sm"
                             variant="outline"
                             className="h-7 text-[10px] px-2"
-                            onClick={() => handleGenerateShotImage(sb)}
+                            onClick={() => handleGenerateShotImage(sb, 'last')}
                             disabled={isGenerating || aiLoading}
                           >
                             {isGenerating ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}

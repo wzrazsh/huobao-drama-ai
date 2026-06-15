@@ -16,8 +16,8 @@ export async function PATCH(
       'action', 'description', 'dialogue', 'dialogueChar', 'duration', 'imagePrompt',
       'videoPrompt', 'atmosphere', 'firstFrameUrl', 'lastFrameUrl', 'videoUrl',
       'ttsAudioUrl', 'ttsSegments', 'composedUrl', 'bgmPrompt', 'soundEffect', 'referenceImages', 'status',
-    ];
-    const data: Record<string, unknown> = {};
+      'location',
+    ]
     for (const field of allowedFields) {
       if (field in body) {
         data[field] = body[field];
