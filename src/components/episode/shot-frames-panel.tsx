@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   Loader2,
@@ -16,6 +17,10 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Progress } from '@/components/ui/progress'
+import {
+  ImagePreviewLightbox,
+  type ImagePreviewState,
+} from '@/components/ui/image-preview-lightbox'
 import { panelVariants, shotTypeLabel } from './helpers'
 import type { ShotFramesPanelProps } from './types'
 
@@ -43,6 +48,9 @@ export function ShotFramesPanel({
   // Count available references
   const charImagesAvailable = characters.filter((c) => c.imageUrl).length
   const sceneImagesAvailable = scenes.filter((s) => s.imageUrl).length
+
+  // Lightbox state — null when closed
+  const [preview, setPreview] = useState<ImagePreviewState | null>(null)
 
   // Empty state
   if (storyboards.length === 0) {
@@ -193,11 +201,23 @@ export function ShotFramesPanel({
                               <ImageIcon className="size-2.5" /> 首帧
                             </div>
                             {hasFirstFrame ? (
-                              <img
-                                src={sb.firstFrameUrl!}
-                                alt={`镜头${sb.shotNumber} 首帧`}
-                                className="w-full h-24 rounded object-cover border border-border/50"
-                              />
+                              <button
+                                type="button"
+                                onClick={() => setPreview({ url: sb.firstFrameUrl!, alt: `镜头${sb.shotNumber} · 首帧` })}
+                                className="block w-full cursor-zoom-in group relative"
+                                aria-label={`查看镜头${sb.shotNumber}首帧大图`}
+                              >
+                                <img
+                                  src={sb.firstFrameUrl!}
+                                  alt={`镜头${sb.shotNumber} 首帧`}
+                                  className="w-full h-24 rounded object-cover border border-border/50 transition-opacity group-hover:opacity-90"
+                                />
+                                <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded">
+                                  <span className="bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1">
+                                    <ImageIcon className="size-2.5" />查看大图
+                                  </span>
+                                </span>
+                              </button>
                             ) : (
                               <div className="w-full h-24 rounded bg-muted/50 flex items-center justify-center border border-dashed border-border/50">
                                 <ImageIcon className="size-5 text-muted-foreground/30" />
@@ -211,11 +231,23 @@ export function ShotFramesPanel({
                               <ImageIcon className="size-2.5" /> 尾帧
                             </div>
                             {hasLastFrame ? (
-                              <img
-                                src={sb.lastFrameUrl!}
-                                alt={`镜头${sb.shotNumber} 尾帧`}
-                                className="w-full h-24 rounded object-cover border border-border/50"
-                              />
+                              <button
+                                type="button"
+                                onClick={() => setPreview({ url: sb.lastFrameUrl!, alt: `镜头${sb.shotNumber} · 尾帧` })}
+                                className="block w-full cursor-zoom-in group relative"
+                                aria-label={`查看镜头${sb.shotNumber}尾帧大图`}
+                              >
+                                <img
+                                  src={sb.lastFrameUrl!}
+                                  alt={`镜头${sb.shotNumber} 尾帧`}
+                                  className="w-full h-24 rounded object-cover border border-border/50 transition-opacity group-hover:opacity-90"
+                                />
+                                <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded">
+                                  <span className="bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1">
+                                    <ImageIcon className="size-2.5" />查看大图
+                                  </span>
+                                </span>
+                              </button>
                             ) : (
                               <div className="w-full h-24 rounded bg-muted/50 flex items-center justify-center border border-dashed border-border/50">
                                 <ImageIcon className="size-5 text-muted-foreground/30" />
@@ -307,6 +339,12 @@ export function ShotFramesPanel({
           </div>
         </div>
       </ScrollArea>
+
+      {/* Lightbox — click any shot frame to view full image */}
+      <ImagePreviewLightbox
+        preview={preview ? { url: preview.url, alt: preview.alt } : null}
+        onClose={() => setPreview(null)}
+      />
     </motion.div>
   )
 }
