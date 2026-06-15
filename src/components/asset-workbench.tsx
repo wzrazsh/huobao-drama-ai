@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAppStore, type Character, type Scene, type Prop, type DramaDetail } from '@/lib/store'
 import { api, type ArtStyleInfo } from '@/lib/api'
@@ -67,10 +67,11 @@ import {
   Users,
   X,
   Zap,
-  ZoomIn,
-  ZoomOut,
 } from 'lucide-react'
-
+import {
+  ImagePreviewLightbox,
+  type ImagePreviewState,
+} from '@/components/ui/image-preview-lightbox'
 // ── Types ──────────────────────────────────────────────────
 
 type AssetType = 'character' | 'scene' | 'prop'
@@ -106,15 +107,7 @@ interface CharacterGenerationProgress {
   label: string
 }
 
-interface ImagePreview {
-  url: string
-  alt: string
-}
-
 const CHARACTER_VIEW_LABELS = ['面部特写', '全身正面', '全身背面', '全身侧面'] as const
-const MIN_PREVIEW_SCALE = 1
-const MAX_PREVIEW_SCALE = 4
-const PREVIEW_SCALE_STEP = 0.25
 
 // ── Color mapping ──────────────────────────────────────────
 
@@ -177,12 +170,11 @@ export function AssetWorkbench() {
   const [editPrompt, setEditPrompt] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   const [activeView, setActiveView] = useState<string>('')
-  const [imagePreview, setImagePreview] = useState<ImagePreview | null>(null)
-  const [previewScale, setPreviewScale] = useState(MIN_PREVIEW_SCALE)
-  const [previewPosition, setPreviewPosition] = useState({ x: 0, y: 0 })
-  const [isDraggingPreview, setIsDraggingPreview] = useState(false)
-  const previewDragStart = useRef({ pointerX: 0, pointerY: 0, imageX: 0, imageY: 0 })
+  const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(null)
 
+  const openImagePreview = (url: string, alt: string) => {
+    setImagePreview({ url, alt })
+  }
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<UnifiedAsset | null>(null)
 
@@ -233,62 +225,9 @@ export function AssetWorkbench() {
     loadArtStyles()
   }, [loadDrama, loadExtractStatus, loadArtStyles])
 
-  const resetImagePreview = useCallback(() => {
-    setPreviewScale(MIN_PREVIEW_SCALE)
-    setPreviewPosition({ x: 0, y: 0 })
-    setIsDraggingPreview(false)
-  }, [])
-
-  const closeImagePreview = useCallback(() => {
-    setImagePreview(null)
-    resetImagePreview()
-  }, [resetImagePreview])
-
-  const openImagePreview = (url: string, alt: string) => {
-    resetImagePreview()
-    setImagePreview({ url, alt })
-  }
-
-  const updatePreviewScale = (nextScale: number) => {
-    const clampedScale = Math.min(MAX_PREVIEW_SCALE, Math.max(MIN_PREVIEW_SCALE, nextScale))
-    setPreviewScale(clampedScale)
-    if (clampedScale === MIN_PREVIEW_SCALE) {
-      setPreviewPosition({ x: 0, y: 0 })
-    }
-  }
-
-  const handlePreviewPointerDown = (event: React.PointerEvent<HTMLImageElement>) => {
-    if (previewScale === MIN_PREVIEW_SCALE || event.button !== 0) return
-    event.preventDefault()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    previewDragStart.current = {
-      pointerX: event.clientX,
-      pointerY: event.clientY,
-      imageX: previewPosition.x,
-      imageY: previewPosition.y,
-    }
-    setIsDraggingPreview(true)
-  }
-
-  const handlePreviewPointerMove = (event: React.PointerEvent<HTMLImageElement>) => {
-    if (!isDraggingPreview) return
-    setPreviewPosition({
-      x: previewDragStart.current.imageX + event.clientX - previewDragStart.current.pointerX,
-      y: previewDragStart.current.imageY + event.clientY - previewDragStart.current.pointerY,
-    })
-  }
-
-  const handlePreviewPointerUp = (event: React.PointerEvent<HTMLImageElement>) => {
-    if (!isDraggingPreview) return
-    event.currentTarget.releasePointerCapture(event.pointerId)
-    setIsDraggingPreview(false)
-  }
-
-  // ── Computed: Unified asset list ──
   const allAssets = useMemo<UnifiedAsset[]>(() => {
     if (!drama) return []
     const assets: UnifiedAsset[] = []
-
     for (const c of drama.characters || []) {
       const appearances = (c as any).appearances || []
       const views = appearances
@@ -477,7 +416,7 @@ export function AssetWorkbench() {
         } else if (asset.type === 'scene') {
           await api.ai.generateSceneImage(asset.id, style)
         } else if (asset.type === 'prop' && asset.imagePrompt) {
-          await api.ai.generateImage(asset.imagePrompt, imageSize, undefined, undefined, undefined)
+          await api.ai.generateImage(asset.imagePrompt, imageSize, undefined, undefined, undefined, { propId: asset.id })
         }
       } catch (err: any) {
         console.error(`Failed to generate image for ${asset.name}:`, err)
@@ -591,7 +530,10 @@ export function AssetWorkbench() {
             : '该场景未匹配到已有角色或道具素材',
         })
       } else if (asset.type === 'prop' && asset.imagePrompt) {
-        await api.ai.generateImage(asset.imagePrompt, imageSize, undefined, undefined, undefined)
+        const result = await api.ai.generateImage(asset.imagePrompt, imageSize, undefined, undefined, undefined, { propId: asset.id })
+        setDetailAsset((previous) => previous && previous.id === asset.id
+          ? { ...previous, imageUrl: result.imageUrl }
+          : previous)
       }
       if (asset.type !== 'scene') {
         toast({ title: '图片生成完成' })
@@ -1574,7 +1516,6 @@ export function AssetWorkbench() {
                     className="text-xs gap-1"
                     onClick={handleSavePrompt}
                   >
-                    <Check className="size-3" />
                     保存提示词
                   </Button>
                 )}
@@ -1583,103 +1524,11 @@ export function AssetWorkbench() {
           )}
         </DialogContent>
       </Dialog>
-
-      {imagePreview && (
-        <Dialog open onOpenChange={(open) => !open && closeImagePreview()}>
-          <DialogContent
-            showCloseButton={false}
-            className="z-[100] !top-0 !right-0 !bottom-0 !left-0 flex h-dvh w-screen !max-w-none !translate-x-0 !translate-y-0 touch-none items-center justify-center overflow-hidden rounded-none border-0 bg-black/95 p-3 shadow-none data-[state=closed]:!animate-none data-[state=open]:!animate-none sm:p-6"
-            aria-label={`${imagePreview.alt}全图预览`}
-            onClick={closeImagePreview}
-            onWheel={(event) => {
-              event.preventDefault()
-              updatePreviewScale(
-                previewScale + (event.deltaY < 0 ? PREVIEW_SCALE_STEP : -PREVIEW_SCALE_STEP)
-              )
-            }}
-          >
-            <DialogTitle className="sr-only">{imagePreview.alt}全图预览</DialogTitle>
-            <div
-              className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-1 rounded-full border border-white/15 bg-black/70 p-1 text-white shadow-lg backdrop-blur-sm sm:top-5"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="size-9 rounded-full text-white hover:bg-white/15 hover:text-white"
-                onClick={() => updatePreviewScale(previewScale - PREVIEW_SCALE_STEP)}
-                disabled={previewScale <= MIN_PREVIEW_SCALE}
-                aria-label="缩小图片"
-                title="缩小"
-              >
-                <ZoomOut className="size-4" />
-              </Button>
-              <button
-                type="button"
-                className="min-w-14 rounded-full px-2 py-1 text-xs tabular-nums hover:bg-white/15"
-                onClick={resetImagePreview}
-                aria-label="恢复适屏"
-                title="恢复适屏"
-              >
-                {Math.round(previewScale * 100)}%
-              </button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="size-9 rounded-full text-white hover:bg-white/15 hover:text-white"
-                onClick={() => updatePreviewScale(previewScale + PREVIEW_SCALE_STEP)}
-                disabled={previewScale >= MAX_PREVIEW_SCALE}
-                aria-label="放大图片"
-                title="放大"
-              >
-                <ZoomIn className="size-4" />
-              </Button>
-            </div>
-
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="absolute right-3 top-3 z-10 size-10 rounded-full bg-black/60 text-white hover:bg-white/15 hover:text-white sm:right-5 sm:top-5"
-              onClick={(event) => {
-                event.stopPropagation()
-                closeImagePreview()
-              }}
-              aria-label="关闭全图预览"
-              title="关闭"
-            >
-              <X className="size-5" />
-            </Button>
-
-            <img
-              src={imagePreview.url}
-              alt={imagePreview.alt}
-              draggable={false}
-              className={`max-h-[calc(100dvh-1.5rem)] max-w-[calc(100vw-1.5rem)] select-none object-contain sm:max-h-[calc(100dvh-3rem)] sm:max-w-[calc(100vw-3rem)] ${
-                previewScale > MIN_PREVIEW_SCALE
-                  ? isDraggingPreview ? 'cursor-grabbing' : 'cursor-grab'
-                  : 'cursor-zoom-in'
-              }`}
-              style={{
-                transform: `translate3d(${previewPosition.x}px, ${previewPosition.y}px, 0) scale(${previewScale})`,
-                transition: isDraggingPreview ? 'none' : 'transform 150ms ease-out',
-              }}
-              onClick={(event) => {
-                event.stopPropagation()
-                if (previewScale === MIN_PREVIEW_SCALE) {
-                  updatePreviewScale(MIN_PREVIEW_SCALE + PREVIEW_SCALE_STEP)
-                }
-              }}
-              onPointerDown={handlePreviewPointerDown}
-              onPointerMove={handlePreviewPointerMove}
-              onPointerUp={handlePreviewPointerUp}
-              onPointerCancel={handlePreviewPointerUp}
-            />
-          </DialogContent>
-        </Dialog>
-      )}
+      {/* Full-screen image preview (zoom + pan) */}
+      <ImagePreviewLightbox
+        preview={imagePreview}
+        onClose={() => setImagePreview(null)}
+      />
 
       {/* ── Add Manual Dialog ── */}
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>

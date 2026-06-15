@@ -634,13 +634,12 @@ export const api = {
         body: JSON.stringify({ characterId, style, referenceImages }),
       }),
 
-    generateImage: (prompt: string, size?: string, episodeId?: string, dialogueChar?: string, sceneLocation?: string) =>
+    generateImage: (prompt: string, size?: string, episodeId?: string, dialogueChar?: string, sceneLocation?: string, options?: { propId?: string; characterId?: string; sceneId?: string; storyboardId?: string; storyboardFrame?: 'first' | 'last' }) =>
       request<{ imageUrl: string; prompt: string }>('/api/ai/generate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, size, episodeId, dialogueChar, sceneLocation }),
+        body: JSON.stringify({ prompt, size, episodeId, dialogueChar, sceneLocation, ...(options || {}) }),
       }),
-
     generateCharacterImage: (characterId: string, style?: string, viewLabel?: string, referenceImages?: string[]) =>
       request<{
         status?: 'processing'

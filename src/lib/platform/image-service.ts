@@ -19,8 +19,11 @@ export interface GeneratePlatformImageInput {
   dramaId?: string
   episodeId?: string
   storyboardId?: string
+  /** For Storyboard images: which frame to write back. Defaults to 'first'. */
+  storyboardFrame?: 'first' | 'last'
   characterId?: string
   sceneId?: string
+  propId?: string
   atmosphere?: string
   dialogueChar?: string
   sceneLocation?: string
@@ -92,6 +95,15 @@ async function resolveImageContext(actor: PlatformActor, input: GeneratePlatform
     })
     if (!scene) throw new PlatformError('NOT_FOUND', 'Scene not found', 404)
     foundDramaIds.add(scene.dramaId)
+  }
+
+  if (input.propId) {
+    const prop = await db.prop.findUnique({
+      where: { id: input.propId },
+      select: { dramaId: true },
+    })
+    if (!prop) throw new PlatformError('NOT_FOUND', 'Prop not found', 404)
+    foundDramaIds.add(prop.dramaId)
   }
 
   if (foundDramaIds.size > 1) {
@@ -241,6 +253,19 @@ export async function generatePlatformImage(
     dramaId,
     filename: `img_${Date.now()}`,
   })
+
+  // Write the generated image back to the source entity so it shows up in lists
+  // and detail dialogs. Only the fields we actually know about are touched.
+  if (input.storyboardId) {
+    const field = input.storyboardFrame === 'last' ? 'lastFrameUrl' : 'firstFrameUrl'
+    await db.storyboard.update({ where: { id: input.storyboardId }, data: { [field]: saved.url } })
+  } else if (input.characterId) {
+    await db.character.update({ where: { id: input.characterId }, data: { imageUrl: saved.url } })
+  } else if (input.sceneId) {
+    await db.scene.update({ where: { id: input.sceneId }, data: { imageUrl: saved.url } })
+  } else if (input.propId) {
+    await db.prop.update({ where: { id: input.propId }, data: { imageUrl: saved.url } })
+  }
 
   if (dramaId) {
     recordGenerationCost({

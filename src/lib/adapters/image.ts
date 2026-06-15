@@ -267,7 +267,10 @@ export class MiniMaxImageAdapter implements ImageProviderAdapter {
 
     const model = config.model || 'image-01'
     const sizeStr = params.size || '1024x1024'
-    const { width, height } = parseSize(sizeStr)
+
+    // MiniMax supports both "WxH" pixel strings and "W:H" aspect strings.
+    // Frontend often sends the latter (e.g. "1:1"), so we accept both.
+    const isAspectString = /^\d+:\d+$/.test(sizeStr)
 
     // MiniMax uses specific aspect_ratio enum values (1:1, 16:9, etc.) or width/height
     const aspectRatioMap: Record<string, string> = {
@@ -282,8 +285,15 @@ export class MiniMaxImageAdapter implements ImageProviderAdapter {
       '720x1280': '9:16',
       '1344x576': '21:9',
     }
-    const aspectRatio = aspectRatioMap[sizeStr] || `${width}/${height}`
 
+    let aspectRatio: string
+    if (isAspectString) {
+      // Direct passthrough — MiniMax accepts these enum values
+      aspectRatio = sizeStr
+    } else {
+      const { width, height } = parseSize(sizeStr)
+      aspectRatio = aspectRatioMap[sizeStr] || `${width}/${height}`
+    }
     const body: Record<string, unknown> = {
       model,
       prompt: params.prompt,

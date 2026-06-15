@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   Loader2,
@@ -17,6 +18,10 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Progress } from '@/components/ui/progress'
+import {
+  ImagePreviewLightbox,
+  type ImagePreviewState,
+} from '@/components/ui/image-preview-lightbox'
 import { panelVariants } from './helpers'
 import type { SceneImagesPanelProps } from './types'
 
@@ -34,6 +39,9 @@ export function SceneImagesPanel({
   const scenesMissingImage = scenes.filter((s) => !s.imageUrl)
   const scenesCompleted = scenes.filter((s) => s.imageUrl).length
   const progressPercent = scenes.length > 0 ? Math.round((scenesCompleted / scenes.length) * 100) : 0
+
+  // Lightbox state — null when closed
+  const [preview, setPreview] = useState<ImagePreviewState | null>(null)
 
   // Empty state
   if (scenes.length === 0) {
@@ -130,11 +138,23 @@ export function SceneImagesPanel({
                     {/* Image preview */}
                     <div className="mb-3">
                       {scene.imageUrl ? (
-                        <img
-                          src={scene.imageUrl}
-                          alt={scene.location}
-                          className="w-full h-32 rounded-lg object-cover border border-border/50"
-                        />
+                        <button
+                          type="button"
+                          onClick={() => setPreview({ url: scene.imageUrl!, alt: scene.location })}
+                          className="block w-full cursor-zoom-in group relative"
+                          aria-label={`查看${scene.location}大图`}
+                        >
+                          <img
+                            src={scene.imageUrl}
+                            alt={scene.location}
+                            className="w-full h-32 rounded-lg object-cover border border-border/50 transition-opacity group-hover:opacity-90"
+                          />
+                          <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg">
+                            <span className="bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded flex items-center gap-1">
+                              <ImageIcon className="size-2.5" />查看大图
+                            </span>
+                          </span>
+                        </button>
                       ) : (
                         <div className="w-full h-32 rounded-lg bg-muted flex items-center justify-center">
                           <MapPin className="size-8 text-muted-foreground/50" />
@@ -227,6 +247,12 @@ export function SceneImagesPanel({
           </div>
         </div>
       </ScrollArea>
+
+      {/* Lightbox — click any scene image to view full image */}
+      <ImagePreviewLightbox
+        preview={preview}
+        onClose={() => setPreview(null)}
+      />
     </motion.div>
   )
 }
