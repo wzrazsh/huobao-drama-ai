@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { aiClient, AI_SYSTEM_PROMPTS } from '@/lib/ai-config'
 import { requireAuth } from '@/lib/auth-helpers'
 import { buildCharacterIdentityPrompt } from '@/lib/character-prompts'
+import { withEpisodeId } from '@/lib/episode-asset-links'
 
 // POST /api/ai/extract-stream - AI Extract Characters & Scenes with SSE progress
 export async function POST(request: NextRequest) {
@@ -116,22 +117,40 @@ export async function POST(request: NextRequest) {
         const savedCharacters = []
         for (let i = 0; i < characters.length; i++) {
           const char = characters[i]
-          const saved = await db.character.create({
-            data: {
-              dramaId,
-              name: char.name || 'Unknown',
-              role: char.role || 'supporting',
-              gender: char.gender || 'unknown',
-              appearance: char.appearance || '',
-              personality: char.personality || '',
-              imagePrompt: buildCharacterIdentityPrompt({
-                name: char.name || 'Unknown',
-                gender: char.gender,
-                appearance: char.appearance,
-                personality: char.personality,
-              }),
-            },
+          const name = char.name || 'Unknown'
+          const existing = await db.character.findFirst({
+            where: { dramaId, name },
           })
+          const imagePrompt = buildCharacterIdentityPrompt({
+            name,
+            gender: char.gender,
+            appearance: char.appearance,
+            personality: char.personality,
+          })
+          const saved = existing
+            ? await db.character.update({
+                where: { id: existing.id },
+                data: {
+                  role: existing.role || char.role || 'supporting',
+                  gender: existing.gender || char.gender || 'unknown',
+                  appearance: existing.appearance || char.appearance || '',
+                  personality: existing.personality || char.personality || '',
+                  imagePrompt: existing.imagePrompt || imagePrompt,
+                  episodeIds: withEpisodeId(existing.episodeIds, episodeId),
+                },
+              })
+            : await db.character.create({
+                data: {
+                  dramaId,
+                  name,
+                  role: char.role || 'supporting',
+                  gender: char.gender || 'unknown',
+                  appearance: char.appearance || '',
+                  personality: char.personality || '',
+                  imagePrompt,
+                  episodeIds: JSON.stringify([episodeId]),
+                },
+              })
           savedCharacters.push(saved)
 
           // Send progress update for each character saved
@@ -154,15 +173,36 @@ export async function POST(request: NextRequest) {
         const savedScenes = []
         for (let i = 0; i < scenes.length; i++) {
           const scene = scenes[i]
-          const saved = await db.scene.create({
-            data: {
-              dramaId,
-              location: scene.location || 'Unknown',
-              timeOfDay: scene.timeOfDay || 'day',
-              description: scene.description || '',
-              prompt: scene.prompt || '',
-            },
+          const location = scene.location || 'Unknown'
+          const timeOfDay = scene.timeOfDay || 'day'
+          const existing = await db.scene.findFirst({
+            where: { dramaId, location, timeOfDay },
           })
+          const saved = existing
+            ? await db.scene.update({
+                where: { id: existing.id },
+                data: {
+                  description:
+                    scene.description && scene.description.length > existing.description.length
+                      ? scene.description
+                      : existing.description,
+                  prompt:
+                    scene.prompt && (!existing.prompt || scene.prompt.length > existing.prompt.length)
+                      ? scene.prompt
+                      : existing.prompt,
+                  episodeIds: withEpisodeId(existing.episodeIds, episodeId),
+                },
+              })
+            : await db.scene.create({
+                data: {
+                  dramaId,
+                  location,
+                  timeOfDay,
+                  description: scene.description || '',
+                  prompt: scene.prompt || '',
+                  episodeIds: JSON.stringify([episodeId]),
+                },
+              })
           savedScenes.push(saved)
 
           const sceneProgress = 75 + Math.round((i + 1) / scenes.length * 15)

@@ -8,6 +8,7 @@
 
 import { db } from '@/lib/db'
 import { VoiceEntry, getActiveProviderVoices, VOICE_CATALOG } from '@/lib/voice-catalog'
+import { withEpisodeId } from '@/lib/episode-asset-links'
 
 // ============================================================
 // Temporary Storage for Uploaded Script Text
@@ -393,6 +394,10 @@ const saveCharacters: ToolExecutor = async (params, context) => {
         updateData.voiceStyle = char.voiceStyle
       if (!existingChar.imagePrompt && char.imagePrompt)
         updateData.imagePrompt = char.imagePrompt
+      const nextEpisodeIds = withEpisodeId(existingChar.episodeIds, context.episodeId)
+      if (nextEpisodeIds !== existingChar.episodeIds) {
+        updateData.episodeIds = nextEpisodeIds
+      }
 
       if (Object.keys(updateData).length > 0) {
         await db.character.update({
@@ -416,6 +421,7 @@ const saveCharacters: ToolExecutor = async (params, context) => {
           personality: char.personality || '',
           voiceStyle: char.voiceStyle || '',
           imagePrompt: char.imagePrompt || '',
+          episodeIds: JSON.stringify([context.episodeId]),
         },
       })
       results.push({ name: char.name, action: 'created' })
@@ -471,6 +477,10 @@ const saveScenes: ToolExecutor = async (params, context) => {
       ) {
         updateData.prompt = scene.prompt
       }
+      const nextEpisodeIds = withEpisodeId(existingScene.episodeIds, context.episodeId)
+      if (nextEpisodeIds !== existingScene.episodeIds) {
+        updateData.episodeIds = nextEpisodeIds
+      }
 
       if (Object.keys(updateData).length > 0) {
         await db.scene.update({
@@ -490,6 +500,7 @@ const saveScenes: ToolExecutor = async (params, context) => {
           timeOfDay: scene.timeOfDay || 'day',
           description: scene.description || '',
           prompt: scene.prompt || '',
+          episodeIds: JSON.stringify([context.episodeId]),
         },
       })
       results.push({ location: scene.location, action: 'created' })
@@ -514,6 +525,7 @@ const readExistingProps: ToolExecutor = async (_params, context) => {
     category: p.category,
     description: p.description,
     imagePrompt: p.imagePrompt,
+    episodeIds: p.episodeIds,
   }))
 }
 
@@ -552,6 +564,10 @@ const saveProps: ToolExecutor = async (params, context) => {
       if (prop.description && prop.description.length > existingProp.description.length) {
         updateData.description = prop.description
       }
+      const nextEpisodeIds = withEpisodeId(existingProp.episodeIds, context.episodeId)
+      if (nextEpisodeIds !== existingProp.episodeIds) {
+        updateData.episodeIds = nextEpisodeIds
+      }
 
       if (Object.keys(updateData).length > 0) {
         await db.prop.update({
@@ -571,6 +587,7 @@ const saveProps: ToolExecutor = async (params, context) => {
           category: prop.category || 'other',
           description: prop.description || '',
           imagePrompt: prop.imagePrompt || null,
+          episodeIds: JSON.stringify([context.episodeId]),
         },
       })
       results.push({ name: prop.name, action: 'created' })
