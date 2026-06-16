@@ -379,6 +379,7 @@ const BASE_MIGRATIONS: { table: string; sql: string }[] = [
       "description" TEXT NOT NULL DEFAULT '',
       "imagePrompt" TEXT,
       "imageUrl" TEXT,
+      "episodeIds" TEXT NOT NULL DEFAULT '[]',
       "assetId" TEXT,
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,

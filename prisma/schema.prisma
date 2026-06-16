@@ -123,7 +123,6 @@ model Character {
   cosImageUrl String? // Public Tencent COS URL for MiniMax subject_reference
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-
   assetId String? // Reference to Asset if derived from library
 
   // --- Character Consistency Fields ---
@@ -148,7 +147,6 @@ model Scene {
   imageUrl    String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-
   assetId String? // Reference to Asset if derived from library
 
   // --- Scene Consistency Fields ---
@@ -355,6 +353,7 @@ model Prop {
   imageUrl    String? // 道具图片
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  episodeIds  String   @default("[]") // JSON: array of episode IDs where this prop appears
 
   assetId String? // Reference to Asset if derived from library
 
