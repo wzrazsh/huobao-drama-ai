@@ -276,7 +276,7 @@ export function AssetWorkbench() {
         description: p.description || '',
         imagePrompt: p.imagePrompt,
         imageUrl: p.imageUrl,
-        episodeIds: '',
+        episodeIds: p.episodeIds,
         createdAt: p.createdAt,
         raw: p,
       })

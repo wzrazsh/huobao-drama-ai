@@ -171,6 +171,16 @@ function genderLabel(gender: string): string {
   return map[gender] ?? gender
 }
 
+function isLinkedToEpisode(episodeIds: string | undefined, episodeId: string): boolean {
+  if (!episodeIds) return false
+  try {
+    const ids = JSON.parse(episodeIds)
+    return Array.isArray(ids) && ids.includes(episodeId)
+  } catch {
+    return false
+  }
+}
+
 // ── Main ExtractPanel component ──────────────────────────────
 
 export function ExtractPanel({
@@ -195,6 +205,20 @@ export function ExtractPanel({
   const { toast } = useToast()
   const [savingToLibrary, setSavingToLibrary] = useState<string | null>(null)
   const [lockingStyle, setLockingStyle] = useState<string | null>(null)
+
+  const episodeId = episode?.id
+  const linkedCharacters = episodeId
+    ? characters.filter((char) => isLinkedToEpisode(char.episodeIds, episodeId))
+    : []
+  const linkedScenes = episodeId
+    ? scenes.filter((scene) => isLinkedToEpisode(scene.episodeIds, episodeId))
+    : []
+  const linkedProps = episodeId
+    ? props.filter((prop) => isLinkedToEpisode(prop.episodeIds, episodeId))
+    : []
+  const displayedCharacters = episodeId ? linkedCharacters : characters
+  const displayedScenes = episodeId ? linkedScenes : scenes
+  const displayedProps = episodeId ? linkedProps : props
 
   // Save entity to asset library
   const handleSaveToLibrary = async (type: 'character' | 'scene' | 'prop', id: string, name: string) => {
@@ -264,7 +288,7 @@ export function ExtractPanel({
     }
   }
   // ── Empty state ──────────────────────────────────────────
-  if (characters.length === 0 && scenes.length === 0 && props.length === 0 && !isExtracting && !aiLoading) {
+  if (displayedCharacters.length === 0 && displayedScenes.length === 0 && displayedProps.length === 0 && !isExtracting && !aiLoading) {
     return (
       <div className="flex-1 flex items-center justify-center p-6">
         <motion.div
@@ -391,11 +415,11 @@ export function ExtractPanel({
               <UserCircle className="size-4 text-primary" />
               角色列表
               <Badge variant="secondary" className="text-[10px]">
-                {characters.length}
+                {displayedCharacters.length}
               </Badge>
             </h3>
             <div className="space-y-3">
-              {characters.map((char) => (
+              {displayedCharacters.map((char) => (
                 <Card key={char.id} className="border-border/50 py-0 gap-0">
                   <CardContent className="p-4">
                     <div className="flex flex-col gap-2.5">
@@ -548,7 +572,7 @@ export function ExtractPanel({
                   </CardContent>
                 </Card>
               ))}
-              {characters.length === 0 && (
+              {displayedCharacters.length === 0 && (
                 <p className="text-xs text-muted-foreground py-4 text-center">暂无角色</p>
               )}
             </div>
@@ -560,11 +584,11 @@ export function ExtractPanel({
               <MapPin className="size-4 text-primary" />
               场景列表
               <Badge variant="secondary" className="text-[10px]">
-                {scenes.length}
+                {displayedScenes.length}
               </Badge>
             </h3>
             <div className="space-y-3">
-              {scenes.map((scene) => (
+              {displayedScenes.map((scene) => (
                 <Card key={scene.id} className="border-border/50 py-0 gap-0">
                   <CardContent className="p-4">
                     <div className="flex flex-col gap-2.5">
@@ -653,7 +677,7 @@ export function ExtractPanel({
                   </CardContent>
                 </Card>
               ))}
-              {scenes.length === 0 && (
+              {displayedScenes.length === 0 && (
                 <p className="text-xs text-muted-foreground py-4 text-center">暂无场景</p>
               )}
             </div>
@@ -665,11 +689,11 @@ export function ExtractPanel({
               <Package className="size-4 text-primary" />
               道具列表
               <Badge variant="secondary" className="text-[10px]">
-                {props.length}
+                {displayedProps.length}
               </Badge>
             </h3>
             <div className="space-y-3">
-              {props.map((prop) => (
+              {displayedProps.map((prop) => (
                 <Card key={prop.id} className="border-border/50 py-0 gap-0">
                   <CardContent className="p-4">
                     <div className="flex flex-col gap-2.5">
@@ -751,7 +775,7 @@ export function ExtractPanel({
                   </CardContent>
                 </Card>
               ))}
-              {props.length === 0 && (
+              {displayedProps.length === 0 && (
                 <p className="text-xs text-muted-foreground py-4 text-center">暂无道具</p>
               )}
             </div>
