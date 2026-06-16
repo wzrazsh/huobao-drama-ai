@@ -33,6 +33,7 @@ export interface Prop {
   imagePrompt: string | null
   imageUrl: string | null
   assetId: string | null
+  episodeIds: string         // JSON array of episode IDs
   createdAt: string
   updatedAt: string
 }

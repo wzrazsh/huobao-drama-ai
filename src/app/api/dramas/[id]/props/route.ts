@@ -33,7 +33,7 @@ export async function POST(
   try {
     const { id } = await params
     const body = await request.json()
-    const { name, category, description, imagePrompt } = body
+    const { name, category, description, imagePrompt, episodeIds } = body
 
     if (!name) {
       return NextResponse.json({ error: '道具名称不能为空' }, { status: 400 })
@@ -58,6 +58,7 @@ export async function POST(
         category: category || 'other',
         description: description || '',
         imagePrompt: imagePrompt || null,
+        episodeIds: episodeIds || '[]',
       },
     })
 

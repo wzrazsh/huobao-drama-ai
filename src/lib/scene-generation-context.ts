@@ -66,7 +66,13 @@ export async function collectSceneGenerationContext(
   )
     .slice(0, 3)
   const relevantProps = props
-    .filter((prop) => includesName(fullSceneText, prop.name))
+    .filter((prop) => {
+      const propEpisodeIds = parseIds(prop.episodeIds)
+      const appearsInSceneEpisode =
+        propEpisodeIds.length === 0 ||
+        propEpisodeIds.some((episodeId) => sceneEpisodeIds.has(episodeId))
+      return appearsInSceneEpisode && includesName(fullSceneText, prop.name)
+    })
     .slice(0, 3)
 
   return {

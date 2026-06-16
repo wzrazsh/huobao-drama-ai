@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { parseEpisodeIds, withEpisodeId } from '@/lib/episode-asset-links'
 
 // ============================================================
 // Import Global Assets API
@@ -33,12 +34,7 @@ export async function GET(
 
     // Determine which are already imported (have this episode's ID in episodeIds)
     const isImported = (episodeIdsStr: string): boolean => {
-      try {
-        const ids: string[] = JSON.parse(episodeIdsStr || '[]')
-        return ids.includes(episodeId)
-      } catch {
-        return false
-      }
+      return parseEpisodeIds(episodeIdsStr).includes(episodeId)
     }
 
     const availableCharacters = characters.filter((c) => !isImported(c.episodeIds))
@@ -47,10 +43,8 @@ export async function GET(
     const availableScenes = scenes.filter((s) => !isImported(s.episodeIds))
     const alreadyImportedScenes = scenes.filter((s) => isImported(s.episodeIds))
 
-    const availableProps = props.filter((p) => {
-      // Props don't have episodeIds in the schema, so treat them all as available
-      return true
-    })
+    const availableProps = props.filter((p) => !isImported(p.episodeIds))
+    const alreadyImportedProps = props.filter((p) => isImported(p.episodeIds))
 
     return NextResponse.json({
       available: {
@@ -61,7 +55,7 @@ export async function GET(
       alreadyImported: {
         characters: alreadyImportedCharacters.length,
         scenes: alreadyImportedScenes.length,
-        props: 0, // Props don't have episodeIds tracking
+        props: alreadyImportedProps.length,
       },
       globalAssetsImported: episode.globalAssetsImported,
       items: {
@@ -82,6 +76,7 @@ export async function GET(
           id: p.id,
           name: p.name,
           category: p.category,
+          alreadyImported: isImported(p.episodeIds),
         })),
       },
     })
@@ -124,14 +119,16 @@ export async function POST(
       return NextResponse.json({ error: 'Episode not found' }, { status: 404 })
     }
 
-    // Get all global characters and scenes for this drama
-    const [characters, scenes] = await Promise.all([
+    // Get all global assets for this drama
+    const [characters, scenes, props] = await Promise.all([
       db.character.findMany({ where: { dramaId: episode.dramaId } }),
       db.scene.findMany({ where: { dramaId: episode.dramaId } }),
+      db.prop.findMany({ where: { dramaId: episode.dramaId } }),
     ])
 
     let importedCharacters = 0
     let importedScenes = 0
+    let importedProps = 0
 
     // Import characters — add episodeId to episodeIds array
     for (const char of characters) {
@@ -177,8 +174,20 @@ export async function POST(
       }
     }
 
-    // Props are drama-level and don't need per-episode tracking
-    const importedProps = 0 // No episodeIds field on props
+    // Import props — add episodeId to episodeIds array
+    for (const prop of props) {
+      const episodeIds = parseEpisodeIds(prop.episodeIds)
+
+      if (!episodeIds.includes(episodeId)) {
+        await db.prop.update({
+          where: { id: prop.id },
+          data: { episodeIds: withEpisodeId(prop.episodeIds, episodeId) },
+        })
+        importedProps++
+      } else if (overwrite) {
+        importedProps++
+      }
+    }
 
     // Mark episode as having global assets imported
     await db.episode.update({
